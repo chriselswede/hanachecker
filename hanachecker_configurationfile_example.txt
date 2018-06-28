@@ -1,0 +1,11 @@
+Comp's HANA CHECKER Configuration File:
+
+-mf HANA_Configuration_MiniChecks_1.00.120+.txt,HANA_Security_MiniChecks.txt
+-en chris@comp.com,smtp.intra.comp.com
+-cg M1140-M1145,peter@comp.com,M1146-M1150,sara@comp.com
+-M1142 lena@comp.com,per@comp.com
+-S0120 chris@ourcompany.com
+-so 0
+
+
+

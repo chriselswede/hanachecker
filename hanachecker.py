@@ -223,7 +223,7 @@ def log(message, to_std, out_dir, file_name = "", recieversEmail = ""):
             #MAILX (https://www.systutorials.com/5167/sending-email-using-mailx-in-linux-through-internal-smtp/):
             mailstring = 'echo "'+message+'" | mailx -s "HANAChecker: Potential Critical Mini-Check(s) '+SID+'!" -S smtp=smtp://'+emailSender.mailServer+' -S from="'+emailSender.senderEmail+'" '+recieversEmail
             #print mailstring
-            #subprocess.check_output(mailstring, shell=True)
+            subprocess.check_output(mailstring, shell=True)
 
 def hana_version_revision_maintenancerevision(hdbsql_string, dbuserkey):
     command_run = subprocess.check_output(hdbsql_string+" -j -A -U " + dbuserkey + " \"select value from sys.m_system_overview where name = 'Version'\"", shell=True)

@@ -49,9 +49,17 @@ def printHelp():
     print(" -ssl    turns on ssl certificate [true/false], makes it possible to use SAP HANA Checker despite SSL, default: false                               ")                 
     print(" -k      DB user key, this one has to be maintained in hdbuserstore, i.e. as <sid>adm do                                                            ")               
     print("         > hdbuserstore SET <DB USER KEY> <ENV> <USERNAME> <PASSWORD>                     , default: SYSTEMKEY                                      ")
+    print("         It could also be a list of comma seperated userkeys (useful in MDC environments), e.g.: SYSTEMKEY,TENANT1KEY,TENANT2KEY                    ")
+    print(" -dbs    DB key, this can be a list of databases accessed from the system defined by -k (-k can only be one key if -dbs is used)                    ")               
+    print("         Note: Users with same name and password have to be maintained in all databases   , default: ''  (not used)                                 ")
+    print("         Example:  -k PQLSYSDB -dbs SYSTEMDB, PQL                                                                                                   ")
     print("                                                                                                                                                    ")
     print("                                                                                                                                                    ")
     print(" EXAMPLE: python hanachecker.py -zf SQLStatements.zip -ct M -en chris@comp.com,smtp.intra.comp.com -M1142 chris@du.my,lena@du.my -M1150 per@du.my,lena@du.my -as true -oe true ")
+    print("                                                                                                                                                    ")
+    print("                                                                                                                                                    ")
+    print("TODO LIST:                                                                                                                                          ")
+    print(" 1. checking multiple DBs with one key                                                                                                              ")
     print("                                                                                                                                                    ")
     print("AUTHOR: Christian Hansen                                                                                                                            ")
     print("                                                                                                                                                    ")
@@ -129,6 +137,17 @@ class MiniCheck:
     def printMiniCheck(self):  
         print self.summary()
         
+class SQLManager:
+    def __init__(self, hdbsql_string, dbuserkey, dbase):
+        self.key = dbuserkey
+        self.db = dbase
+        if len(dbase) > 1:
+            self.hdbsql_jAU = hdbsql_string + " -j -A -U " + self.key + " -d " + self.db
+            self.hdbsql_jAaxU = hdbsql_string + " -j -A -a -x -U " + self.key + " -d " + self.db
+        else:            
+            self.hdbsql_jAU = hdbsql_string + " -j -A -U " + self.key
+            self.hdbsql_jAaxU = hdbsql_string + " -j -A -a -x -U " + self.key
+
 ######################## DEFINE FUNCTIONS ################################
 
 def is_integer(s):
@@ -162,15 +181,16 @@ def cdalias(alias):   # alias e.g. cdtrace, cdhdb, ...
     return path            
         
 def checkUserKey(dbuserkey):
-    command_run = subprocess.check_output('''hdbuserstore LIST '''+dbuserkey, shell=True) 
-    if "NOT FOUND" in command_run:
+    key_environment = subprocess.check_output('''hdbuserstore LIST '''+dbuserkey, shell=True) 
+    if "NOT FOUND" in key_environment:
         print "ERROR, the key ", dbuserkey, " is not maintained in hdbuserstore."
         os._exit(1)
-    ENV = command_run.split('\n')[1]
-    host = ENV.split(':')[1].replace(' ','')  
-    if not any(host in file for file in subprocess.check_output('find '+cdalias('cdtrace')+' -name "indexserver_*"', shell=True).splitlines(1)):
-        print "ERROR: host provided in hdbuserstore for key "+dbuserkey+" is not the correct local host (see the host name part of the file names of the trace files)"
-        os._exit(1)       
+    local_host = subprocess.check_output("hostname", shell=True).replace('\n','')
+    ENV = key_environment.split('\n')[1].replace('  ENV : ','').split(',')
+    key_hosts = [env.split(':')[0] for env in ENV]
+    if not local_host in key_hosts:
+        print "ERROR, local host, ", local_host, ", should be one of the hosts specified for the key, ", dbuserkey, " (see --help for more info)"
+        os._exit(1)    
     
 def checkAndConvertBooleanFlag(boolean, flagstring):     
     boolean = boolean.lower()
@@ -225,8 +245,8 @@ def log(message, to_std, out_dir, file_name = "", recieversEmail = ""):
             #print mailstring
             subprocess.check_output(mailstring, shell=True)
 
-def hana_version_revision_maintenancerevision(hdbsql_string, dbuserkey):
-    command_run = subprocess.check_output(hdbsql_string+" -j -A -U " + dbuserkey + " \"select value from sys.m_system_overview where name = 'Version'\"", shell=True)
+def hana_version_revision_maintenancerevision(sqlman):
+    command_run = subprocess.check_output(sqlman.hdbsql_jAU + " \"select value from sys.m_system_overview where name = 'Version'\"", shell=True)
     hanaver = command_run.splitlines(1)[2].split('.')[0].replace('| ','')
     hanarev = command_run.splitlines(1)[2].split('.')[2]
     hanamrev = command_run.splitlines(1)[2].split('.')[3]
@@ -272,7 +292,7 @@ def getMiniCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision):
             if version == 1:
                 files = subprocess.check_output('ls '+tmp_sql_dir+'HANA_Configuration_MiniChecks_Internal_1*', shell=True).splitlines(1)
                 if not len(files) == 1:
-                    print "COMPATIBILITY ERROR: HANASitter needs to be updated since there are now more than one internal mini-check files for HANA 1"
+                    print "COMPATIBILITY ERROR: HANAChecker needs to be updated since there are now more than one internal mini-check files for HANA 1"
                     os._exit(1)
                 minicheck_files.append(files[0])
             else:
@@ -280,18 +300,18 @@ def getMiniCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision):
         elif ct == 'S':
             files = subprocess.check_output('ls '+tmp_sql_dir+'HANA_Security_MiniChecks*', shell=True).splitlines(1)
             if not len(files) == 1:
-                print "COMPATIBILITY ERROR: HANASitter needs to be updated since there are now more than one security mini-check files"
+                print "COMPATIBILITY ERROR: HANAChecker needs to be updated since there are now more than one security mini-check files"
                 os._exit(1)
             minicheck_files.append(files[0])
         elif ct == 'T':
             files = subprocess.check_output('ls '+tmp_sql_dir+'HANA_TraceFiles_MiniChecks*', shell=True).splitlines(1)
             if not len(files) == 1:
-                print "COMPATIBILITY ERROR: HANASitter needs to be updated since there are now more than one tracefiles mini-check files"
+                print "COMPATIBILITY ERROR: HANAChecker needs to be updated since there are now more than one tracefiles mini-check files"
                 os._exit(1)
             minicheck_files.append(files[0])
     return minicheck_files        
         
-def getCriticalMiniChecks(minicheck_files, dbuserkey, hdbsql_string, std_out, out_dir): 
+def getCriticalMiniChecks(minicheck_files, sqlman, std_out, out_dir): 
     critical_mini_checks = []
     for minicheck_file in minicheck_files:
         checkType = 'M'
@@ -302,9 +322,9 @@ def getCriticalMiniChecks(minicheck_files, dbuserkey, hdbsql_string, std_out, ou
         elif 'Trace' in minicheck_file:
             checkType = 'T'
         try:
-            result = subprocess.check_output(hdbsql_string+' -j -A -a -x -U ' + dbuserkey + ' -I '+minicheck_file, shell=True).splitlines()
+            result = subprocess.check_output(sqlman.hdbsql_jAaxU + ' -I '+minicheck_file, shell=True).splitlines()
         except:
-            log("USER ERROR: The user represented by the key "+dbuserkey+" cannot connect to the system. Make sure this user is properly saved in hdbuserstore.", std_out, out_dir)
+            log("USER ERROR: The user represented by the key in the hdbuserstore cannot connect to the system. Make sure this user is properly saved in hdbuserstore.", std_out, out_dir)
             os._exit(1)
         result = [ [word.strip(' ') for word in line.split('|')] for line in result]           
         old_checkId = "-1"
@@ -364,8 +384,11 @@ def addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks):
                     checkEmailDict[checkType][checkNumber] = catch_all_emails  
     return checkEmailDict
     
-def sendEmails(critical_mini_checks, checkEmailDict, one_email, always_send, execution_string, std_out, out_dir):
+def sendEmails(critical_mini_checks, checkEmailDict, one_email, always_send, execution_string, dbase, std_out, out_dir):
     messages = {}
+    dbstring = ""
+    if len(dbase) > 1:
+        dbstring = dbase+'@' 
     if (always_send):
         unique_emails = []
         for val in checkEmailDict.values():
@@ -374,7 +397,7 @@ def sendEmails(critical_mini_checks, checkEmailDict, one_email, always_send, exe
                     if email not in unique_emails:
                         unique_emails.append(email)
         for email in unique_emails:
-            messages.update({email:["HANACecker was executed "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" on "+SID+" with \n"+execution_string+"\nIf any of the mini-checks that you are responsible for seem critical, you will be notified now."]})
+            messages.update({email:["HANACecker was executed "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" on "+dbstring+SID+" with \n"+execution_string+"\nIf any of the mini-checks that you are responsible for seem critical, you will be notified now."]})
     for check in critical_mini_checks:
         if check.Number in list(checkEmailDict[check.Type].keys()):
             for email in checkEmailDict[check.Type][check.Number]:
@@ -412,6 +435,7 @@ def main():
                                # KEY SYSTEMKEY
                                #     ENV : mo-fc8d991e0:30015
                                #     USER: SYSTEM
+    dbases = ['']
     std_out = "1" #print to std out
     out_dir = "/tmp/hanachecker_output"
     flag_file = ""    #default: no configuration input file
@@ -485,6 +509,8 @@ def main():
                         catch_all_emails = [x for x in flagValue.split(',')]
                     if firstWord == '-ic': 
                         ignore_checks = [x for x in flagValue.split(',')]
+                    if firstWord == '-dbs':
+                        dbases = [x for x in flagValue.split(',')]
                         
 
      
@@ -522,6 +548,8 @@ def main():
         catch_all_emails = [x for x in sys.argv[  sys.argv.index('-ca') + 1   ].split(',')]
     if '-ic' in sys.argv:
         ignore_checks = [x for x in sys.argv[  sys.argv.index('-ic') + 1   ].split(',')]
+    if '-dbs' in sys.argv:
+        dbases = [x for x in sys.argv[  sys.argv.index('-dbs') + 1   ].split(',')]
             
     global SID
     SID = subprocess.check_output('whoami', shell=True).replace('\n','').replace('adm','').upper()
@@ -625,27 +653,35 @@ def main():
                 print "INPUT ERROR: -ca must be in the format email,email,email and so on. Please see --help for more information."
                 os._exit(1)
         checkEmailDict = addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks)            
+    ### dbases, -dbs, and dbuserkeys, -k
+    if len(dbases) > 1 and len(dbuserkeys) > 1:
+        log("INPUT ERROR: -k may only specify one key if -dbs is used. Please see --help for more information.", logman)
+        os._exit(1)
 
     ################ START #################
     while True: # hanachecker intervall loop
         for dbuserkey in dbuserkeys:
             checkUserKey(dbuserkey)
-            ########## GET MINICHECK FILES FROM -ct if not -mf specified ##############
-            if check_types:        
-                tmp_sql_dir = "./tmp_sql_statements/"
-                zip_ref = zipfile.ZipFile(zip_file, 'r')
-                zip_ref.extractall(tmp_sql_dir) 
-                [version, revision, mrevision] = hana_version_revision_maintenancerevision(hdbsql_string, dbuserkey)
-                minicheck_files = getMiniCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision)            
-            ##### GET CRITICAL MINICHECKS FROM ALL MINI-CHECK FILES (either from -ct or -mf) ############
-            critical_mini_checks = getCriticalMiniChecks(minicheck_files, dbuserkey, hdbsql_string, std_out, out_dir)
-            ##### SEND EMAILS FOR ALL CRITICAL MINI-CHECKS THAT HAVE A CORRESPONDING EMAIL ADDRESS ######
-            sendEmails(critical_mini_checks, checkEmailDict, one_email, always_send, execution_string, std_out, out_dir)
-            ########### IF MINICHECK FILES FROM -ct WE HAVE TO CLEAN UP ################
-            if check_types:
-                minicheck_files = []           
-                subprocess.check_output('rm -r '+tmp_sql_dir, shell=True)
-                zip_ref.close()
+            ############# MULTIPLE DATABASES #######
+            for dbase in dbases:
+                ############# SQL MANAGER ##############
+                sqlman = SQLManager(hdbsql_string, dbuserkey, dbase)
+                ########## GET MINICHECK FILES FROM -ct if not -mf specified ##############
+                if check_types:        
+                    tmp_sql_dir = "./tmp_sql_statements/"
+                    zip_ref = zipfile.ZipFile(zip_file, 'r')
+                    zip_ref.extractall(tmp_sql_dir) 
+                    [version, revision, mrevision] = hana_version_revision_maintenancerevision(sqlman)
+                    minicheck_files = getMiniCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision)            
+                ##### GET CRITICAL MINICHECKS FROM ALL MINI-CHECK FILES (either from -ct or -mf) ############
+                critical_mini_checks = getCriticalMiniChecks(minicheck_files, sqlman, std_out, out_dir)
+                ##### SEND EMAILS FOR ALL CRITICAL MINI-CHECKS THAT HAVE A CORRESPONDING EMAIL ADDRESS ######
+                sendEmails(critical_mini_checks, checkEmailDict, one_email, always_send, execution_string, dbase, std_out, out_dir)
+                ########### IF MINICHECK FILES FROM -ct WE HAVE TO CLEAN UP ################
+                if check_types:
+                    minicheck_files = []           
+                    subprocess.check_output('rm -r '+tmp_sql_dir, shell=True)
+                    zip_ref.close()
         # HANACHECKER INTERVALL
         if hanachecker_interval < 0: 
             sys.exit()

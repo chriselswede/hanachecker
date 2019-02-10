@@ -12,15 +12,19 @@ def printHelp():
     print(" with a specified interval. See also SAP Note 1999993.                                                                                              ")
     print("                                                                                                                                                    ")
     print("INPUT ARGUMENTS:                                                                                                                                    ")
-    print("         *** MINI-CHECKS and EMAILS mapping ***                                                                                                     ")
+    print("         *** MINI-CHECKS, PARAMETER-CHECKS and EMAILS mapping ***                                                                                   ")
     print(" -<CHID> mini-check to email address, if that particular mini-check specifed by the flag is potential critical an email is sent to the address      ")
-    print("         specified by the value of the flag, e.g. -230 peter@ourcompany.com, then Peter will get an email if CHID 230 shows an X in C.              ")
+    print("         specified by the value of the flag, e.g. -M0230 peter@ourcompany.com, then Peter will get an email if CHID 230 shows an X in C.            ")
     print(" -cg     mini-check groups, groupings of mini-checks with responsible email addresses associated, example:                                          ")
-    print("         -cg 1-1500,peter@ourcompany.com,1501-3000,sara@ourcompany.com,3001-5000,chris@ourcompany.com                                               ")
+    print("         -cg M0001-M1500,peter@ourcompany.com,M1501-M3000,sara@ourcompany.com,M3001-M5000,chris@ourcompany.com                                      ")
+    print(" -pe     parameter emails, a comma seperated list of emails that catches all parameter checks, default '' (not used)                                ")
+    print("         Note: This only makes sense if HANA_Configuration_Parameters is included in the input, either with -mf, or -ct P                           ")
+    print(" -ip     ignore dublicated parameter, parameters that are set to same value in different layers will only be mentioned once, default true           ")
     print(" -oe     one email [true/false], true: only one email is sent per email address, false: one email is sent per critical mini check, default: false   ")
     print(" -as     always send [true/false], true: all email addresses will be send at least a notification email, even if none of the mini-checks assigned   ")
     print("         to the emails were potential critical, default: false                                                                                      ")
-    print(" -ca     catch all emails, the email addresses specified by the -ca flag recieve an email about each potential critical mini-check.                 ")
+    print(" -ca     catch all emails, the email addresses specified by the -ca flag recieve an email about each potential critical mini-check (also from       ")
+    print("         parameter checks, if any), default: '' (not used)                                                                                          ")
     print(" -ic     ignore checks, a list of mini-check CHIDs (seperated by commas) that should be ignored by the catch all emails, default '' (not used)      ")
     print("         *** INPUT ***                                                                                                                              ")
     print(" -mf     full path(s) of a mini-check file(s)                                                                                                       ")
@@ -29,7 +33,7 @@ def printHelp():
     print(" -zf     full path to SQLStatement.zip (cannot be used together with -mf and must be used together with -ct), default '' (not used)                 ")
     print("         Example:  -zf SQLStatements.zip  (if the zip file is located in same directory as hanachecker.py)                                          ")
     print(" -ct     check types, specifies what types of mini-checks to executes (must be used together with -zf), default '' (not used)                       ")
-    print("         Example:  -ct M,I,S,T     (in this example all possible mini-check types, mini, internal, security, and trace, would be executed)          ")
+    print("         Example:  -ct M,I,S,T,P   (in this example all possible mini-check types; mini, internal, security, trace, and parameter would be executed)")
     print(" -ff     flag file, full path to a file that contains input flags, each flag in a new line, all lines in the file that does not start with a        ")
     print("         flag are considered comments, if this flag is used no other flags should be given, default: '' (not used)                                  ")
     print("         *** OUTPUT ***                                                                                                                             ")
@@ -58,8 +62,6 @@ def printHelp():
     print(" EXAMPLE: python hanachecker.py -zf SQLStatements.zip -ct M -en chris@comp.com,smtp.intra.comp.com -M1142 chris@du.my,lena@du.my -M1150 per@du.my,lena@du.my -as true -oe true ")
     print("                                                                                                                                                    ")
     print("                                                                                                                                                    ")
-    print("TODO LIST:                                                                                                                                          ")
-    print(" 1. checking multiple DBs with one key                                                                                                              ")
     print("                                                                                                                                                    ")
     print("AUTHOR: Christian Hansen                                                                                                                            ")
     print("                                                                                                                                                    ")
@@ -110,7 +112,7 @@ class MiniCheck:
         self.SAPNote = SAPNote
         self.TraceText = TraceText
     def summary(self):
-        sum = "Mini Check ID "+str(self.CHID)
+        sum = "\nMini Check ID "+str(self.CHID)
         if self.Area:
             sum += "  Area: "+self.Area
         if self.Description:
@@ -136,6 +138,64 @@ class MiniCheck:
         return sum
     def printMiniCheck(self):  
         print self.summary()
+        
+class ParameterCheck:
+    def __init__(self, IniFile, Section, Parameter, Priority, DefaultValue, ConfiguredValue, RecommendedValue, SAPNote, ConfiguredLayer, Revision, Environment, CpuThreads, CpuFrequency, NumaNodes, GlobalAllocationLimit, SlaveNodes, LogVolumeSize):
+        self.IniFile = IniFile
+        self.Section = Section
+        self.Parameter = Parameter
+        self.Priority = Priority
+        self.DefaultValue = DefaultValue
+        self.ConfiguredValue = ConfiguredValue
+        self.RecommendedValue = RecommendedValue
+        self.SAPNote = SAPNote
+        self.ConfiguredLayer = ConfiguredLayer
+        self.Revision = Revision
+        self.Environment = Environment
+        self.CpuThreads = CpuThreads
+        self.CpuFrequency = CpuFrequency
+        self.NumaNodes = NumaNodes
+        self.GlobalAllocationLimit = GlobalAllocationLimit
+        self.SlaveNodes = SlaveNodes
+        self.LogVolumeSize = LogVolumeSize
+    def summary(self):
+        sum = "\nParameter '"+self.Parameter+"' in configuration file '"+self.IniFile+"' and in section '"+self.Section+"'"
+        if "-- HANA internal --" in self.DefaultValue:
+            sum += " has an internal default value"
+        else:
+            sum += " has default value '"+self.DefaultValue+"'"
+        if "-- not set --" in self.ConfiguredValue:
+            sum += ", is not configured"
+        else:
+            sum += ", is configured to '"+self.ConfiguredValue+"' in "+self.ConfiguredLayer+" layer"
+        if "-- check why set --" in self.RecommendedValue:
+            sum += ", but has no recommended value, so please check why it is set."
+        else:
+            sum += ", but the recommendation is '"+self.RecommendedValue+"'."
+        if self.SAPNote:
+            sum += " For more information see SAP Note "+self.SAPNote+"."
+        if self.Priority:
+            sum += " This has priority "+self.Priority+"."
+        sum += "\nFollowing scenario has been taken into account:\n"
+        if self.Revision:
+            sum += "Revision: "+self.Revision
+        if self.Environment:
+            sum += "  Environment: "+self.Environment
+        if self.CpuThreads:
+            sum += "  CpuThreads: "+self.CpuThreads
+        if self.CpuFrequency:
+            sum += "  CpuFrequency: "+self.CpuFrequency
+        if self.NumaNodes:
+            sum += "  NumaNodes: "+self.NumaNodes
+        if self.GlobalAllocationLimit:
+            sum += "  GlobalAllocationLimit: "+self.GlobalAllocationLimit
+        if self.SlaveNodes:
+            sum += "  SlaveNodes: "+self.SlaveNodes
+        if self.LogVolumeSize:
+            sum += "  LogVolumeSize: "+self.LogVolumeSize
+        return sum
+    def printParameterCheck(self):  
+        print self.summary()        
         
 class SQLManager:
     def __init__(self, hdbsql_string, dbuserkey, dbase):
@@ -270,7 +330,7 @@ def get_file_revision(file_name, base_file_name, tmp_sql_dir, version):
         file_mrevision = 0
     return [file_revision, file_mrevision]                    
         
-def getMiniCheckFileVersion(base_file_name, tmp_sql_dir, version, revision, mrevision):
+def getFileVersion(base_file_name, tmp_sql_dir, version, revision, mrevision):
     files = subprocess.check_output('ls '+tmp_sql_dir+base_file_name+'_'+str(version)+'*', shell=True).splitlines(1)
     chosen_file_revision = 0
     chosen_file_mrevision = 0            
@@ -283,46 +343,63 @@ def getMiniCheckFileVersion(base_file_name, tmp_sql_dir, version, revision, mrev
             chosen_file_mrevision = file_mrevision
     return chosen_file_name
 
-def getMiniCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision):
-    minicheck_files = []
+def getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision):
+    check_files = []
     for ct in check_types:
         if ct == 'M':
-            minicheck_files.append(getMiniCheckFileVersion('HANA_Configuration_MiniChecks', tmp_sql_dir, version, revision, mrevision))    
+            check_files.append(getFileVersion('HANA_Configuration_MiniChecks', tmp_sql_dir, version, revision, mrevision))    
         elif ct == 'I':
             if version == 1:
                 files = subprocess.check_output('ls '+tmp_sql_dir+'HANA_Configuration_MiniChecks_Internal_1*', shell=True).splitlines(1)
                 if not len(files) == 1:
                     print "COMPATIBILITY ERROR: HANAChecker needs to be updated since there are now more than one internal mini-check files for HANA 1"
                     os._exit(1)
-                minicheck_files.append(files[0])
+                check_files.append(files[0])
             else:
-                minicheck_files.append(getMiniCheckFileVersion('HANA_Configuration_MiniChecks_Internal', tmp_sql_dir, version, revision, mrevision))
+                check_files.append(getFileVersion('HANA_Configuration_MiniChecks_Internal', tmp_sql_dir, version, revision, mrevision))
         elif ct == 'S':
             files = subprocess.check_output('ls '+tmp_sql_dir+'HANA_Security_MiniChecks*', shell=True).splitlines(1)
             if not len(files) == 1:
                 print "COMPATIBILITY ERROR: HANAChecker needs to be updated since there are now more than one security mini-check files"
                 os._exit(1)
-            minicheck_files.append(files[0])
+            check_files.append(files[0])
         elif ct == 'T':
             files = subprocess.check_output('ls '+tmp_sql_dir+'HANA_TraceFiles_MiniChecks*', shell=True).splitlines(1)
             if not len(files) == 1:
                 print "COMPATIBILITY ERROR: HANAChecker needs to be updated since there are now more than one tracefiles mini-check files"
                 os._exit(1)
-            minicheck_files.append(files[0])
-    return minicheck_files        
+            check_files.append(files[0])
+        if ct == 'P':
+            files = subprocess.check_output('ls '+tmp_sql_dir+'HANA_Configuration_Parameters_1*', shell=True).splitlines(1)
+            if not len(files) == 1:
+                print "COMPATIBILITY ERROR: HANAChecker needs to be updated since there are now more than one parameter check files"
+                os._exit(1)
+            check_files.append(files[0])
+    return check_files        
         
-def getCriticalMiniChecks(minicheck_files, sqlman, std_out, out_dir): 
+def getCriticalChecks(check_files, ignore_dublicated_parameter, sqlman, std_out, out_dir): 
+    revision = ''
+    environment = ''
+    cputhreads = ''
+    cpufrequency = ''
+    numa_nodes = ''
+    global_allocation_limit = ''
+    slave_nodes = ''
+    log_volume_size = ''
     critical_mini_checks = []
-    for minicheck_file in minicheck_files:
+    critical_parameter_checks = []
+    for check_file in check_files:
         checkType = 'M'
-        if 'Internal' in minicheck_file:
+        if 'Internal' in check_file:
             checkType = 'I'
-        elif 'Security' in minicheck_file:
+        elif 'Security' in check_file:
             checkType = 'S'
-        elif 'Trace' in minicheck_file:
+        elif 'Trace' in check_file:
             checkType = 'T'
+        elif 'Parameters' in check_file:
+            checkType = 'P'
         try:
-            result = subprocess.check_output(sqlman.hdbsql_jAaxU + ' -I '+minicheck_file, shell=True).splitlines()
+            result = subprocess.check_output(sqlman.hdbsql_jAaxU + ' -I '+check_file, shell=True).splitlines()
         except:
             log("USER ERROR: The user represented by the key in the hdbuserstore cannot connect to the system. Make sure this user is properly saved in hdbuserstore.", std_out, out_dir)
             os._exit(1)
@@ -331,7 +408,53 @@ def getCriticalMiniChecks(minicheck_files, sqlman, std_out, out_dir):
         old_description = ""
         for line in result:
             if len(line) > 1:
-                if is_check_id(line[1]):
+                if checkType == 'P':
+                    if "Revision:" in line[1]:
+                        revision = line[2]
+                    elif "Environment:" in line[1]:
+                        environment = line[2]
+                    elif "CPU threads:" in line[1]:
+                        cputhreads = line[2]
+                    elif "CPU frequency (MHz):" in line[1]:
+                        cpufrequency = line[2]
+                    elif "NUMA nodes:" in line[1]:
+                        numa_nodes = line[2]
+                    elif "GAL (GB):" in line[1]:
+                        global_allocation_limit = line[2]
+                    elif "Slave_nodes" in line[1]:
+                        slave_nodes = line[2]
+                    elif "Log volume size (GB):" in line[1]:
+                        log_volume_size = line[2]
+                    elif line[10] and line[11]:  
+                        if cputhreads == '0' or cpufrequency == '0' or numa_nodes == '?' or global_allocation_limit == '?' or log_volume_size == '?':
+                            log("PRIVILEGE ERROR: The user represented by the key in the hdbuserstore has insufficient privileges.", std_out, out_dir)
+                            log("Make sure he has sufficient privilges to read these:", std_out, out_dir)
+                            log("CPU threads: "+cputhreads+"   CPU frequency: "+cpufrequency+"   NUMA nodes: "+numa_nodes+"   GAL (GB): "+global_allocation_limit+"   Log volume size (GB): "+log_volume_size, std_out, out_dir)
+                            log("Suggestion: The role MONITORING could help.", std_out, out_dir)
+                            os._exit(1)                           
+                        inifile = line[1]
+                        section = line[2]
+                        parameter = line[3]
+                        priority = line[4]
+                        defaultvalue = line[5]
+                        configuredvalue= line[6]
+                        recommendedvalue = line[7]
+                        sapnote = line[8]
+                        configuredlayer = line[9]
+                        if not ignore_dublicated_parameter or not parameter_is_dublicate(inifile, section, parameter, configuredvalue, critical_parameter_checks):                          
+                            if parameter in ['allocationlimit', 'statement_memory_limit', 'max_partitions_limited_by_locations']: 
+                                critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', global_allocation_limit, '', ''))    
+                            elif parameter in ['default_statement_concurrency_limit', 'max_concurrency', 'max_concurrency_hint', 'num_cores', 'max_gc_parallelity', 'tables_preloaded_in_parallel']:
+                                critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, cputhreads, '', '', '', '', ''))    
+                            elif parameter in ['savepoint_pre_critical_flush_retry_threshold']:
+                                critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', cpufrequency, '', '', '', ''))           
+                            elif parameter in ['logshipping_max_retention_size']:
+                                critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', log_volume_size))
+                            elif parameter in ['max_partitions']: 
+                                critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', global_allocation_limit, slave_nodes, ''))    
+                            else:    
+                                critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', ''))
+                elif is_check_id(line[1]):
                     if checkType == 'T':
                         potential_critical = 'X'
                         checkId = line[1]
@@ -356,7 +479,13 @@ def getCriticalMiniChecks(minicheck_files, sqlman, std_out, out_dir):
                             critical_mini_checks.append(MiniCheck(checkId, '', description, host, '', '', '', value, expected_value, potential_critical, sap_note, ''))
                         old_checkId = line[1] if line[1] else old_checkId
                         old_description = line[2] if line[2] else old_description    
-    return critical_mini_checks
+    return [critical_mini_checks, critical_parameter_checks]
+    
+def parameter_is_dublicate(inifile, section, parameter, configuredvalue, critical_parameter_checks): #find parameters set to same value in different layers
+    for check in critical_parameter_checks:
+        if inifile == check.IniFile and section == check.Section and parameter == check.Parameter and configuredvalue == check.ConfiguredValue:
+            return True
+    return False
     
 def addCheckGroupsToDict(checkEmailDict, check_groups):
     global chidMax
@@ -384,20 +513,26 @@ def addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks):
                     checkEmailDict[checkType][checkNumber] = catch_all_emails  
     return checkEmailDict
     
-def sendEmails(critical_mini_checks, checkEmailDict, one_email, always_send, execution_string, dbase, std_out, out_dir):
+def sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, always_send, execution_string, dbase, std_out, out_dir):
+    critical_mini_checks = critical_checks[0]
+    critical_parameter_checks = critical_checks[1]
     messages = {}
     dbstring = ""
     if len(dbase) > 1:
         dbstring = dbase+'@' 
-    if (always_send):
+    if always_send:
         unique_emails = []
         for val in checkEmailDict.values():
             for emails in val.values():
                 for email in emails:
                     if email not in unique_emails:
                         unique_emails.append(email)
+        always_send_message = "HANACecker was executed "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" on "+dbstring+SID+" with \n"+execution_string+"\nIf any of the mini and/or parameter checks that you are responsible for seem critical, you will be notified now.\n"
         for email in unique_emails:
-            messages.update({email:["HANACecker was executed "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" on "+dbstring+SID+" with \n"+execution_string+"\nIf any of the mini-checks that you are responsible for seem critical, you will be notified now."]})
+            messages.update({email:[always_send_message]})
+        for email in parameter_emails:
+            if email not in unique_emails:
+                messages.update({email:[always_send_message]})
     for check in critical_mini_checks:
         if check.Number in list(checkEmailDict[check.Type].keys()):
             for email in checkEmailDict[check.Type][check.Number]:
@@ -405,6 +540,12 @@ def sendEmails(critical_mini_checks, checkEmailDict, one_email, always_send, exe
                     messages[email].append(check.summary())
                 else:
                     messages.update({email:[check.summary()]})
+    for check in critical_parameter_checks:
+        for email in parameter_emails:
+            if email in messages:
+                messages[email].append(check.summary())
+            else:
+                messages.update({email:[check.summary()]})
     for email, messages_for_email in messages.items():
         if one_email:
             message = "\n".join(messages_for_email)
@@ -427,6 +568,7 @@ def main():
     #####################   DEFAULTS   ####################
     email_sender = []
     hanachecker_interval = -1
+    ignore_dublicated_parameter = "true"
     one_email = "false"
     always_send = "false"
     ssl = "false"
@@ -439,11 +581,12 @@ def main():
     std_out = "1" #print to std out
     out_dir = "/tmp/hanachecker_output"
     flag_file = ""    #default: no configuration input file
-    minicheck_files = None
+    check_files = None
     zip_file = None
     check_types = None
     checkEmailDict = {'M':{}, 'I':{}, 'S':{}, 'T':{}}  #mini, internal, security, trace
     check_groups = []
+    parameter_emails = []
     catch_all_emails = []
     ignore_checks = []
 
@@ -479,7 +622,9 @@ def main():
                     if firstWord == '-en': 
                         email_sender = [x for x in flagValue.split(',')]                    
                     if firstWord == '-hci':
-                        hanachecker_interval = flagValue    
+                        hanachecker_interval = flagValue  
+                    if firstWord == '-ip': 
+                        ignore_dublicated_parameter = flagValue   
                     if firstWord == '-oe': 
                         one_email = flagValue
                     if firstWord == '-as': 
@@ -493,7 +638,7 @@ def main():
                     if firstWord == '-od': 
                         out_dir = flagValue
                     if firstWord == '-mf': 
-                        minicheck_files = [x for x in flagValue.split(',')]
+                        check_files = [x for x in flagValue.split(',')]
                     if firstWord == '-zf': 
                         zip_file = flagValue
                     if firstWord == '-ct': 
@@ -505,6 +650,8 @@ def main():
                                 checkEmailDict[checkFlagType][checkFlagNumber] = [x for x in flagValue.split(',')]
                     if firstWord == '-cg': 
                         check_groups = [x for x in flagValue.split(',')]
+                    if firstWord == '-pe': 
+                        parameter_emails = [x for x in flagValue.split(',')]
                     if firstWord == '-ca': 
                         catch_all_emails = [x for x in flagValue.split(',')]
                     if firstWord == '-ic': 
@@ -519,6 +666,8 @@ def main():
         email_sender = [x for x in sys.argv[  sys.argv.index('-en') + 1   ].split(',')] 
     if '-hci' in sys.argv:
         hanachecker_interval = sys.argv[sys.argv.index('-hci') + 1]
+    if '-ip' in sys.argv:
+        ignore_dublicated_parameter = sys.argv[sys.argv.index('-ip') + 1]        
     if '-oe' in sys.argv:
         one_email = sys.argv[sys.argv.index('-oe') + 1]
     if '-as' in sys.argv:
@@ -532,7 +681,7 @@ def main():
     if '-od' in sys.argv:
         out_dir = sys.argv[sys.argv.index('-od') + 1]
     if '-mf' in sys.argv:
-        minicheck_files = [x for x in sys.argv[  sys.argv.index('-mf') + 1   ].split(',')]
+        check_files = [x for x in sys.argv[  sys.argv.index('-mf') + 1   ].split(',')]
     if '-zf' in sys.argv:
         zip_file = sys.argv[sys.argv.index('-zf') + 1]
     if '-ct' in sys.argv:
@@ -544,6 +693,8 @@ def main():
                 checkEmailDict[checkFlagType][checkFlagNumber] = [x for x in sys.argv[  sys.argv.index('-'+checkId) + 1   ].split(',')] 
     if '-cg' in sys.argv:
         check_groups = [x for x in sys.argv[  sys.argv.index('-cg') + 1   ].split(',')]
+    if '-pe' in sys.argv:
+        parameter_emails = [x for x in sys.argv[  sys.argv.index('-pe') + 1   ].split(',')]
     if '-ca' in sys.argv:
         catch_all_emails = [x for x in sys.argv[  sys.argv.index('-ca') + 1   ].split(',')]
     if '-ic' in sys.argv:
@@ -585,6 +736,8 @@ def main():
     hanachecker_interval = int(hanachecker_interval)*24*3600  # days to seconds
     ### one_email, -oe
     one_email = checkAndConvertBooleanFlag(one_email, "-oe")
+    ### ignore_dublicated_parameter, -ip
+    ignore_dublicated_parameter = checkAndConvertBooleanFlag(ignore_dublicated_parameter, "-ip")
     ### always_send, -as
     always_send = checkAndConvertBooleanFlag(always_send, "-as")
     ### ssl, -ssl
@@ -592,8 +745,8 @@ def main():
     hdbsql_string = "hdbsql "
     if ssl:
         hdbsql_string = "hdbsql -e -ssltrustcert -sslcreatecert "
-    ### minicheck_files, -mf
-    if not minicheck_files and not zip_file:
+    ### check_files, -mf
+    if not check_files and not zip_file:
         print "INPUT ERROR: Either -mf or -zf has to be specified. Please see --help for more information."
         os._exit(1)
     ### zip_file, -zf
@@ -606,8 +759,8 @@ def main():
         os._exit(1)
     if check_types:
         for ct in check_types:
-            if ct not in ['M', 'I', 'S', 'T']:
-                print "INPUT ERROR: -ct must be a comma seperated list where the elements can only be M, I, S, or T. Please see --help for more information."
+            if ct not in ['M', 'I', 'S', 'T', 'P']:
+                print "INPUT ERROR: -ct must be a comma seperated list where the elements can only be M, I, S, T, or P. Please see --help for more information."
                 os._exit(1)
         if len(check_types) != len(set(check_types)): # if duplicates
             print "INPUT ERROR: -ct should not contain duplicates. Please see --help for more information."
@@ -652,7 +805,14 @@ def main():
             if not is_email(ca):
                 print "INPUT ERROR: -ca must be in the format email,email,email and so on. Please see --help for more information."
                 os._exit(1)
-        checkEmailDict = addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks)            
+        checkEmailDict = addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks)   
+    ### parameter_emails, -pe
+    if len(parameter_emails):
+        for pe in parameter_emails:
+            if not is_email(pe):
+                print "INPUT ERROR: -pe must be in the format email,email,email and so on. Please see --help for more information."
+                os._exit(1)     
+    parameter_emails.extend(catch_all_emails)   # catch-all-emails also catch parameter critical checks
     ### dbases, -dbs, and dbuserkeys, -k
     if len(dbases) > 1 and len(dbuserkeys) > 1:
         log("INPUT ERROR: -k may only specify one key if -dbs is used. Please see --help for more information.", logman)
@@ -672,14 +832,14 @@ def main():
                     zip_ref = zipfile.ZipFile(zip_file, 'r')
                     zip_ref.extractall(tmp_sql_dir) 
                     [version, revision, mrevision] = hana_version_revision_maintenancerevision(sqlman)
-                    minicheck_files = getMiniCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision)            
+                    check_files = getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision) 
                 ##### GET CRITICAL MINICHECKS FROM ALL MINI-CHECK FILES (either from -ct or -mf) ############
-                critical_mini_checks = getCriticalMiniChecks(minicheck_files, sqlman, std_out, out_dir)
+                critical_checks = getCriticalChecks(check_files, ignore_dublicated_parameter, sqlman, std_out, out_dir)
                 ##### SEND EMAILS FOR ALL CRITICAL MINI-CHECKS THAT HAVE A CORRESPONDING EMAIL ADDRESS ######
-                sendEmails(critical_mini_checks, checkEmailDict, one_email, always_send, execution_string, dbase, std_out, out_dir)
+                sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, always_send, execution_string, dbase, std_out, out_dir)
                 ########### IF MINICHECK FILES FROM -ct WE HAVE TO CLEAN UP ################
                 if check_types:
-                    minicheck_files = []           
+                    check_files = []           
                     subprocess.check_output('rm -r '+tmp_sql_dir, shell=True)
                     zip_ref.close()
         # HANACHECKER INTERVALL

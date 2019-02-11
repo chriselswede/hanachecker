@@ -19,6 +19,7 @@ def printHelp():
     print("         -cg M0001-M1500,peter@ourcompany.com,M1501-M3000,sara@ourcompany.com,M3001-M5000,chris@ourcompany.com                                      ")
     print(" -pe     parameter emails, a comma seperated list of emails that catches all parameter checks, default '' (not used)                                ")
     print("         Note: This only makes sense if HANA_Configuration_Parameters is included in the input, either with -mf, or -ct P                           ")
+    print(" -is     ignore check_why_set parameter, if this is true parameter with recommended value 'check why set' are ignored, default false                ")
     print(" -ip     ignore dublicated parameter, parameters that are set to same value in different layers will only be mentioned once, default true           ")
     print(" -oe     one email [true/false], true: only one email is sent per email address, false: one email is sent per critical mini check, default: false   ")
     print(" -as     always send [true/false], true: all email addresses will be send at least a notification email, even if none of the mini-checks assigned   ")
@@ -377,7 +378,7 @@ def getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision):
             check_files.append(files[0])
     return check_files        
         
-def getCriticalChecks(check_files, ignore_dublicated_parameter, sqlman, std_out, out_dir): 
+def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, sqlman, std_out, out_dir): 
     revision = ''
     environment = ''
     cputhreads = ''
@@ -441,19 +442,20 @@ def getCriticalChecks(check_files, ignore_dublicated_parameter, sqlman, std_out,
                         recommendedvalue = line[7]
                         sapnote = line[8]
                         configuredlayer = line[9]
-                        if not ignore_dublicated_parameter or not parameter_is_dublicate(inifile, section, parameter, configuredvalue, critical_parameter_checks):                          
-                            if parameter in ['allocationlimit', 'statement_memory_limit', 'max_partitions_limited_by_locations']: 
-                                critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', global_allocation_limit, '', ''))    
-                            elif parameter in ['default_statement_concurrency_limit', 'max_concurrency', 'max_concurrency_hint', 'num_cores', 'max_gc_parallelity', 'tables_preloaded_in_parallel']:
-                                critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, cputhreads, '', '', '', '', ''))    
-                            elif parameter in ['savepoint_pre_critical_flush_retry_threshold']:
-                                critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', cpufrequency, '', '', '', ''))           
-                            elif parameter in ['logshipping_max_retention_size']:
-                                critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', log_volume_size))
-                            elif parameter in ['max_partitions']: 
-                                critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', global_allocation_limit, slave_nodes, ''))    
-                            else:    
-                                critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', ''))
+                        if not ignore_dublicated_parameter or not parameter_is_dublicate(inifile, section, parameter, configuredvalue, critical_parameter_checks):
+                            if not ignore_check_why_set or not "-- check why set --" in recommendedvalue:                                                        
+                                if parameter in ['allocationlimit', 'statement_memory_limit', 'max_partitions_limited_by_locations']: 
+                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', global_allocation_limit, '', ''))    
+                                elif parameter in ['default_statement_concurrency_limit', 'max_concurrency', 'max_concurrency_hint', 'num_cores', 'max_gc_parallelity', 'tables_preloaded_in_parallel']:
+                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, cputhreads, '', '', '', '', ''))    
+                                elif parameter in ['savepoint_pre_critical_flush_retry_threshold']:
+                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', cpufrequency, '', '', '', ''))           
+                                elif parameter in ['logshipping_max_retention_size']:
+                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', log_volume_size))
+                                elif parameter in ['max_partitions']: 
+                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', global_allocation_limit, slave_nodes, ''))    
+                                else:    
+                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', ''))
                 elif is_check_id(line[1]):
                     if checkType == 'T':
                         potential_critical = 'X'
@@ -568,6 +570,7 @@ def main():
     #####################   DEFAULTS   ####################
     email_sender = []
     hanachecker_interval = -1
+    ignore_check_why_set = "false"
     ignore_dublicated_parameter = "true"
     one_email = "false"
     always_send = "false"
@@ -622,7 +625,9 @@ def main():
                     if firstWord == '-en': 
                         email_sender = [x for x in flagValue.split(',')]                    
                     if firstWord == '-hci':
-                        hanachecker_interval = flagValue  
+                        hanachecker_interval = flagValue
+                    if firstWord == '-is': 
+                        ignore_check_why_set = flagValue 
                     if firstWord == '-ip': 
                         ignore_dublicated_parameter = flagValue   
                     if firstWord == '-oe': 
@@ -666,6 +671,8 @@ def main():
         email_sender = [x for x in sys.argv[  sys.argv.index('-en') + 1   ].split(',')] 
     if '-hci' in sys.argv:
         hanachecker_interval = sys.argv[sys.argv.index('-hci') + 1]
+    if '-is' in sys.argv:
+        ignore_check_why_set = sys.argv[sys.argv.index('-is') + 1]
     if '-ip' in sys.argv:
         ignore_dublicated_parameter = sys.argv[sys.argv.index('-ip') + 1]        
     if '-oe' in sys.argv:
@@ -736,6 +743,8 @@ def main():
     hanachecker_interval = int(hanachecker_interval)*24*3600  # days to seconds
     ### one_email, -oe
     one_email = checkAndConvertBooleanFlag(one_email, "-oe")
+    ### ignore_check_why_set, -is
+    ignore_check_why_set = checkAndConvertBooleanFlag(ignore_check_why_set, "-is")    
     ### ignore_dublicated_parameter, -ip
     ignore_dublicated_parameter = checkAndConvertBooleanFlag(ignore_dublicated_parameter, "-ip")
     ### always_send, -as
@@ -834,7 +843,7 @@ def main():
                     [version, revision, mrevision] = hana_version_revision_maintenancerevision(sqlman)
                     check_files = getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision) 
                 ##### GET CRITICAL MINICHECKS FROM ALL MINI-CHECK FILES (either from -ct or -mf) ############
-                critical_checks = getCriticalChecks(check_files, ignore_dublicated_parameter, sqlman, std_out, out_dir)
+                critical_checks = getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, sqlman, std_out, out_dir)
                 ##### SEND EMAILS FOR ALL CRITICAL MINI-CHECKS THAT HAVE A CORRESPONDING EMAIL ADDRESS ######
                 sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, always_send, execution_string, dbase, std_out, out_dir)
                 ########### IF MINICHECK FILES FROM -ct WE HAVE TO CLEAN UP ################

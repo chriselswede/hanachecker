@@ -26,7 +26,9 @@ def printHelp():
     print("         to the emails were potential critical, default: false                                                                                      ")
     print(" -ca     catch all emails, the email addresses specified by the -ca flag recieve an email about each potential critical mini-check (also from       ")
     print("         parameter checks, if any), default: '' (not used)                                                                                          ")
-    print(" -ic     ignore checks, a list of mini-check CHIDs (seperated by commas) that should be ignored by the catch all emails, default '' (not used)      ")
+    print(" -ic     ignore checks, a list of mini-check CHIDs (seperated by commas) that should be ignored by the catch all emails (they will however          ")
+    print("         still be included in the log files), default '' (not used)                                                                                 ")
+    print(" -il     ignore list, a list of mini-check CHIDs (seperated by commas) that are ignored (i.e. not even in log files), default '' (not used)         ")
     print("         *** INPUT ***                                                                                                                              ")
     print(" -mf     full path(s) of a mini-check file(s)                                                                                                       ")
     print("         Example:  -mf /tmp/SQLStatements/HANA_Configuration_MiniChecks_1.00.102.01+.txt                                                            ")
@@ -378,7 +380,7 @@ def getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision):
             check_files.append(files[0])
     return check_files        
         
-def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, sqlman, std_out, out_dir): 
+def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, std_out, out_dir): 
     revision = ''
     environment = ''
     cputhreads = ''
@@ -457,30 +459,31 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                                 else:    
                                     critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', ''))
                 elif is_check_id(line[1]):
-                    if checkType == 'T':
-                        potential_critical = 'X'
-                        checkId = line[1]
-                        area = line[2]
-                        description = line[3]
-                        host = line[4]
-                        port = line[5]
-                        count = line[6]
-                        last_occurrence = line[7]
-                        sap_note = line[8]
-                        trace_text = line[9]
-                        critical_mini_checks.append(MiniCheck(checkId, area, description, host, port, count, last_occurrence, '', '', potential_critical, sap_note, trace_text))
-                    else: 
-                        potential_critical = line[6] if checkType in ['M','I'] else line[5] #'M' and 'I' column 6, but for 'S' column 5
-                        if potential_critical == 'X':
-                            checkId = line[1] if line[1] else old_checkId
-                            description = line[2] if line[2] else old_description
-                            host = line[3] if checkType in ['M','I'] else ''    #no host for 'S'
-                            value = line[4] if checkType in ['M','I'] else line[3]
-                            expected_value = line[5] if checkType in ['M','I'] else line[4]
-                            sap_note = line[7] if checkType in ['M','I'] else line[6]
-                            critical_mini_checks.append(MiniCheck(checkId, '', description, host, '', '', '', value, expected_value, potential_critical, sap_note, ''))
-                        old_checkId = line[1] if line[1] else old_checkId
-                        old_description = line[2] if line[2] else old_description    
+                    if not line[1] in ignore_checks:
+                        if checkType == 'T':
+                            potential_critical = 'X'
+                            checkId = line[1]
+                            area = line[2]
+                            description = line[3]
+                            host = line[4]
+                            port = line[5]
+                            count = line[6]
+                            last_occurrence = line[7]
+                            sap_note = line[8]
+                            trace_text = line[9]
+                            critical_mini_checks.append(MiniCheck(checkId, area, description, host, port, count, last_occurrence, '', '', potential_critical, sap_note, trace_text))
+                        else: 
+                            potential_critical = line[6] if checkType in ['M','I'] else line[5] #'M' and 'I' column 6, but for 'S' column 5
+                            if potential_critical == 'X':
+                                checkId = line[1] if line[1] else old_checkId
+                                description = line[2] if line[2] else old_description
+                                host = line[3] if checkType in ['M','I'] else ''    #no host for 'S'
+                                value = line[4] if checkType in ['M','I'] else line[3]
+                                expected_value = line[5] if checkType in ['M','I'] else line[4]
+                                sap_note = line[7] if checkType in ['M','I'] else line[6]
+                                critical_mini_checks.append(MiniCheck(checkId, '', description, host, '', '', '', value, expected_value, potential_critical, sap_note, ''))
+                            old_checkId = line[1] if line[1] else old_checkId
+                            old_description = line[2] if line[2] else old_description    
     return [critical_mini_checks, critical_parameter_checks]
     
 def parameter_is_dublicate(inifile, section, parameter, configuredvalue, critical_parameter_checks): #find parameters set to same value in different layers
@@ -502,11 +505,11 @@ def addCheckGroupsToDict(checkEmailDict, check_groups):
                     checkEmailDict[checkType][checkNumber] = [cg[1]]     
     return checkEmailDict
     
-def addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks):
+def addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks_for_ca):
     global chidMax
     for checkType in ['M', 'I', 'S', 'T']: #mini, internal, security, trace
         for checkNumber in range(1, chidMax):
-            if convertToCheckId(checkType, checkNumber) not in ignore_checks:
+            if convertToCheckId(checkType, checkNumber) not in ignore_checks_for_ca:
                 if checkNumber in list(checkEmailDict[checkType].keys()):
                     for ca_email in catch_all_emails:
                         if ca_email not in checkEmailDict[checkType][checkNumber]:
@@ -591,6 +594,7 @@ def main():
     check_groups = []
     parameter_emails = []
     catch_all_emails = []
+    ignore_checks_for_ca = []
     ignore_checks = []
 
     
@@ -660,6 +664,8 @@ def main():
                     if firstWord == '-ca': 
                         catch_all_emails = [x for x in flagValue.split(',')]
                     if firstWord == '-ic': 
+                        ignore_checks_for_ca = [x for x in flagValue.split(',')]
+                    if firstWord == '-il': 
                         ignore_checks = [x for x in flagValue.split(',')]
                     if firstWord == '-dbs':
                         dbases = [x for x in flagValue.split(',')]
@@ -705,7 +711,9 @@ def main():
     if '-ca' in sys.argv:
         catch_all_emails = [x for x in sys.argv[  sys.argv.index('-ca') + 1   ].split(',')]
     if '-ic' in sys.argv:
-        ignore_checks = [x for x in sys.argv[  sys.argv.index('-ic') + 1   ].split(',')]
+        ignore_checks_for_ca = [x for x in sys.argv[  sys.argv.index('-ic') + 1   ].split(',')]
+    if '-il' in sys.argv:
+        ignore_checks = [x for x in sys.argv[  sys.argv.index('-il') + 1   ].split(',')]
     if '-dbs' in sys.argv:
         dbases = [x for x in sys.argv[  sys.argv.index('-dbs') + 1   ].split(',')]
             
@@ -800,13 +808,18 @@ def main():
                 print "INPUT ERROR: the two check IDs in a check group must be of the same check type. Please see --help for more information."
                 os._exit(1)            
         checkEmailDict = addCheckGroupsToDict(checkEmailDict, check_groups)
-    ### ignore_checks, -ic
-    if len(ignore_checks) and not len(catch_all_emails):
+    ### ignore_checks_for_ca, -ic
+    if len(ignore_checks_for_ca) and not len(catch_all_emails):
         print "INPUT ERROR: -ic is specified but not -ca, this makes no sense. Please see --help for more information."
         os._exit(1)
+    for i in range(len(ignore_checks_for_ca)):
+        if not is_check_id(ignore_checks_for_ca[i]):
+            print "INPUT ERROR: all elements of -ic must be a check id. Please see --help for more information."
+            os._exit(1)
+    ### ignore_checks, -il
     for i in range(len(ignore_checks)):
         if not is_check_id(ignore_checks[i]):
-            print "INPUT ERROR: all elements of -ic must be in an integer. Please see --help for more information."
+            print "INPUT ERROR: all elements of -il must be a check id. Please see --help for more information."
             os._exit(1)
     ### catch_all_emails, -ca
     if len(catch_all_emails):
@@ -814,7 +827,7 @@ def main():
             if not is_email(ca):
                 print "INPUT ERROR: -ca must be in the format email,email,email and so on. Please see --help for more information."
                 os._exit(1)
-        checkEmailDict = addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks)   
+        checkEmailDict = addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks_for_ca)   
     ### parameter_emails, -pe
     if len(parameter_emails):
         for pe in parameter_emails:
@@ -843,7 +856,7 @@ def main():
                     [version, revision, mrevision] = hana_version_revision_maintenancerevision(sqlman)
                     check_files = getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision) 
                 ##### GET CRITICAL MINICHECKS FROM ALL MINI-CHECK FILES (either from -ct or -mf) ############
-                critical_checks = getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, sqlman, std_out, out_dir)
+                critical_checks = getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, std_out, out_dir)
                 ##### SEND EMAILS FOR ALL CRITICAL MINI-CHECKS THAT HAVE A CORRESPONDING EMAIL ADDRESS ######
                 sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, always_send, execution_string, dbase, std_out, out_dir)
                 ########### IF MINICHECK FILES FROM -ct WE HAVE TO CLEAN UP ################

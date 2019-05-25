@@ -319,14 +319,12 @@ def hana_version_revision_maintenancerevision(sqlman):
     return [int(hanaver), int(hanarev), int(hanamrev)]
 
 def get_file_revision(file_name, base_file_name, tmp_sql_dir, version):
-    file_revision = file_name.split(tmp_sql_dir+base_file_name+'_'+str(version)+'.00')[1].split('+')[0]
-    #print "file_revision: ", file_revision 
+    file_revision = file_name.split(tmp_sql_dir+base_file_name+'_'+str(version)+'.00')[1].split('+')[0] 
     if file_revision == '':
         file_revision = 0
     else:
         file_revision = file_revision.lstrip('.')
     if '.' in file_revision:
-        #print "file_revision.split('.')[0] : ", file_revision.split('.')[0]
         file_mrevision = int(file_revision.split('.')[1])
         file_revision = int(file_revision.split('.')[0])
     else:
@@ -340,7 +338,7 @@ def getFileVersion(base_file_name, tmp_sql_dir, version, revision, mrevision):
     chosen_file_name = ''
     for file_name in files:
         [file_revision, file_mrevision] = get_file_revision(file_name, base_file_name, tmp_sql_dir, version)
-        if (int(file_revision) < int(revision) and int(chosen_file_revision) < int(file_revision)) or (int(file_mrevision) < int(mrevision) and int(chosen_file_revision) == int(file_revision) and int(chosen_file_mrevision) < int(file_mrevision)):
+        if (int(file_revision) <= int(revision) and int(chosen_file_revision) < int(file_revision)) or (int(file_mrevision) <= int(mrevision) and int(chosen_file_revision) == int(file_revision) and int(chosen_file_mrevision) < int(file_mrevision)):
             chosen_file_name = file_name
             chosen_file_revision = file_revision
             chosen_file_mrevision = file_mrevision
@@ -854,7 +852,7 @@ def main():
                     zip_ref = zipfile.ZipFile(zip_file, 'r')
                     zip_ref.extractall(tmp_sql_dir) 
                     [version, revision, mrevision] = hana_version_revision_maintenancerevision(sqlman)
-                    check_files = getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision) 
+                    check_files = getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision)
                 ##### GET CRITICAL MINICHECKS FROM ALL MINI-CHECK FILES (either from -ct or -mf) ############
                 critical_checks = getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, std_out, out_dir)
                 ##### SEND EMAILS FOR ALL CRITICAL MINI-CHECKS THAT HAVE A CORRESPONDING EMAIL ADDRESS ######

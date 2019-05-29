@@ -402,7 +402,7 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
         try:
             result = subprocess.check_output(sqlman.hdbsql_jAaxU + ' -I '+check_file, shell=True).splitlines()
         except:
-            log("USER ERROR: The user represented by the key in the hdbuserstore cannot connect to the system. Make sure this user is properly saved in hdbuserstore.", std_out, out_dir)
+            log("ERROR: The check file could not be executed. Either there is a problem with the check file (did you get the latest SQLStatements.zip from SAP Note 1969700) or there is a problem with the user (make sure this user is properly saved in hdbuserstore).", std_out, out_dir)
             os._exit(1)
         result = [ [word.strip(' ') for word in line.split('|')] for line in result]           
         old_checkId = "-1"

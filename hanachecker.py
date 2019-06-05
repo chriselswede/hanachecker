@@ -202,6 +202,14 @@ class ParameterCheck:
     def printParameterCheck(self):  
         print self.summary()        
         
+class LogManager:
+    def __init__(self, std_out, out_dir, SID, emailSender = "", db = ""):
+        self.std_out = std_out
+        self.out_dir = out_dir
+        self.SID = SID
+        self.emailSender = emailSender
+        self.db = db
+
 class SQLManager:
     def __init__(self, hdbsql_string, dbuserkey, dbase):
         self.key = dbuserkey
@@ -234,7 +242,7 @@ def is_email(s):
     if not len(s) == 2:
         return False
     return '.' in s[1]
-        
+
 def cdalias(alias):   # alias e.g. cdtrace, cdhdb, ...
     command_run = subprocess.check_output(['/bin/bash', '-i', '-c', "alias "+alias])
     pieces = command_run.strip("\n").strip("alias "+alias+"=").strip("'").strip("cd ").split("/")
@@ -243,7 +251,7 @@ def cdalias(alias):   # alias e.g. cdtrace, cdhdb, ...
         if piece[0] == '$':
             piece = (subprocess.check_output(['/bin/bash', '-i', '-c', "echo "+piece])).strip("\n")
         path = path + '/' + piece + '/' 
-    return path            
+    return path       
         
 def checkUserKey(dbuserkey, virtual_local_host):
     key_environment = subprocess.check_output('''hdbuserstore LIST '''+dbuserkey, shell=True) 
@@ -289,26 +297,24 @@ def get_check_number(checkString):
         os._exit(1)
     return int(checkString[1:5].lstrip('0'))
         
-def log(message, to_std, out_dir, file_name = "", recieversEmail = ""):
-    global emailSender
+def log(message, logman, file_name = "", recieversEmail = ""):
     logMessage = '"'+message+'"' 
-    if emailSender:    
+    if logman.emailSender:    
         logMessage += " is sent to " + recieversEmail if recieversEmail else message
-    if to_std:
+    if logman.std_out:
         print logMessage
     if file_name == "":
         file_name = "hanacheckerlog"
-    logfile = open(out_dir+"/"+file_name+"_"+datetime.now().strftime("%Y-%m-%d_%H-%M-%S"+".txt").replace(" ", "_"), "a")
+    logfile = open(logman.out_dir+"/"+file_name+"_"+datetime.now().strftime("%Y-%m-%d_%H-%M-%S"+".txt").replace(" ", "_"), "a")
     logfile.write(logMessage+"\n")   
     logfile.flush()
     logfile.close()
     if recieversEmail:
-        global SID
-        if emailSender:
+        if logman.emailSender:
             #MAILX (https://www.systutorials.com/5167/sending-email-using-mailx-in-linux-through-internal-smtp/):
-            mailstring = 'echo "'+message+'" | mailx -s "HANAChecker: Potential Critical Mini-Check(s) '+SID+'!" -S smtp=smtp://'+emailSender.mailServer+' -S from="'+emailSender.senderEmail+'" '+recieversEmail
-            #print mailstring
-            subprocess.check_output(mailstring, shell=True)
+            mailstring = 'echo "'+message+'" | mailx -s "HANAChecker: Potential Critical Mini-Check(s) '+logman.db+"@"+logman.SID+'!" -S smtp=smtp://'+logman.emailSender.mailServer+' -S from="'+logman.emailSender.senderEmail+'" '+recieversEmail
+            print mailstring
+            #subprocess.check_output(mailstring, shell=True)
 
 def hana_version_revision_maintenancerevision(sqlman):
     command_run = subprocess.check_output(sqlman.hdbsql_jAU + " \"select value from sys.m_system_overview where name = 'Version'\"", shell=True)
@@ -376,7 +382,7 @@ def getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision):
             check_files.append(files[0])
     return check_files        
         
-def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, std_out, out_dir): 
+def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, logman): 
     revision = ''
     environment = ''
     cputhreads = ''
@@ -400,7 +406,7 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
         try:
             result = subprocess.check_output(sqlman.hdbsql_jAaxU + ' -I '+check_file, shell=True).splitlines()
         except:
-            log("ERROR: The check file could not be executed. Either there is a problem with the check file (did you get the latest SQLStatements.zip from SAP Note 1969700) or there is a problem with the user (make sure this user is properly saved in hdbuserstore).", std_out, out_dir)
+            log("ERROR: The check file could not be executed. Either there is a problem with the check file (did you get the latest SQLStatements.zip from SAP Note 1969700) or there is a problem with the user (make sure this user is properly saved in hdbuserstore).", logman)
             os._exit(1)
         result = [ [word.strip(' ') for word in line.split('|')] for line in result]           
         old_checkId = "-1"
@@ -426,10 +432,10 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                         log_volume_size = line[2]
                     elif line[10] and line[11]:  
                         if cputhreads == '0' or cpufrequency == '0' or numa_nodes == '?' or global_allocation_limit == '?' or log_volume_size == '?':
-                            log("PRIVILEGE ERROR: The user represented by the key in the hdbuserstore has insufficient privileges.", std_out, out_dir)
-                            log("Make sure he has sufficient privilges to read these:", std_out, out_dir)
-                            log("CPU threads: "+cputhreads+"   CPU frequency: "+cpufrequency+"   NUMA nodes: "+numa_nodes+"   GAL (GB): "+global_allocation_limit+"   Log volume size (GB): "+log_volume_size, std_out, out_dir)
-                            log("Suggestion: The role MONITORING could help.", std_out, out_dir)
+                            log("PRIVILEGE ERROR: The user represented by the key in the hdbuserstore has insufficient privileges.", logman)
+                            log("Make sure he has sufficient privilges to read these:", logman)
+                            log("CPU threads: "+cputhreads+"   CPU frequency: "+cpufrequency+"   NUMA nodes: "+numa_nodes+"   GAL (GB): "+global_allocation_limit+"   Log volume size (GB): "+log_volume_size, logman)
+                            log("Suggestion: The role MONITORING could help.", logman)
                             os._exit(1)                           
                         inifile = line[1]
                         section = line[2]
@@ -514,13 +520,13 @@ def addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks_for_
                     checkEmailDict[checkType][checkNumber] = catch_all_emails  
     return checkEmailDict
     
-def sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, always_send, execution_string, dbase, std_out, out_dir):
+def sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, always_send, execution_string, logman):
     critical_mini_checks = critical_checks[0]
     critical_parameter_checks = critical_checks[1]
     messages = {}
     dbstring = ""
-    if len(dbase) > 1:
-        dbstring = dbase+'@' 
+    if len(logman.db) > 1:
+        dbstring = logman.db+'@' 
     if always_send:
         unique_emails = []
         for val in checkEmailDict.values():
@@ -528,7 +534,7 @@ def sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, alw
                 for email in emails:
                     if email not in unique_emails:
                         unique_emails.append(email)
-        always_send_message = "HANACecker was executed "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" on "+dbstring+SID+" with \n"+execution_string+"\nIf any of the mini and/or parameter checks that you are responsible for seem critical, you will be notified now.\n"
+        always_send_message = "HANACecker was executed "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" on "+dbstring+logman.SID+" with \n"+execution_string+"\nIf any of the mini and/or parameter checks that you are responsible for seem critical, you will be notified now.\n"
         for email in unique_emails:
             messages.update({email:[always_send_message]})
         for email in parameter_emails:
@@ -550,16 +556,15 @@ def sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, alw
     for email, messages_for_email in messages.items():
         if one_email:
             message = "\n".join(messages_for_email)
-            log(message, std_out, out_dir, recieversEmail = email)
+            log(message, logman, recieversEmail = email)
         else:
             for message in messages_for_email:
-                log(message, std_out, out_dir, recieversEmail = email)
+                log(message, logman, recieversEmail = email)
                 
     
 def main():
     ### globals ###
     global chidMax
-    global SID
     
     #####################  CHECK PYTHON VERSION ###########
     if sys.version_info[0] != 2 or sys.version_info[1] != 7:
@@ -718,7 +723,7 @@ def main():
     if '-dbs' in sys.argv:
         dbases = [x for x in sys.argv[  sys.argv.index('-dbs') + 1   ].split(',')]
             
-    global SID
+    ##### SYSTEM ID #############        
     SID = subprocess.check_output('whoami', shell=True).replace('\n','').replace('adm','').upper()
               
     ############# OUTPUT DIRECTORY #########
@@ -726,11 +731,14 @@ def main():
     if out_dir and not os.path.exists(out_dir):
         os.makedirs(out_dir)
  
+    ############# LOG MANAGER ###########
+    logman = LogManager(std_out, out_dir, SID)
+
     ############ CHECK AND CONVERT INPUT PARAMETERS ################ 
     execution_string = " ".join(sys.argv)
     ### std_out, -so
     if not is_integer(std_out):
-        log("INPUT ERROR: -so must be an integer. Please see --help for more information.", std_out, out_dir)
+        log("INPUT ERROR: -so must be an integer. Please see --help for more information.", logman)
         os._exit(1)
     std_out = int(std_out) 
     ### email_sender, -en
@@ -741,13 +749,13 @@ def main():
         if not is_email(email_sender[0]):
             print "INPUT ERROR: first element of -en has to be a valid email. Please see --help for more information."
             os._exit(1) 
-    global emailSender
     emailSender = None
     if email_sender:
         emailSender = EmailSender(email_sender[0], email_sender[1])
+        logman.emailSender = emailSender
     ### hanachecker_interval, -hci
     if not is_integer(hanachecker_interval):
-        log("INPUT ERROR: -hci must be an integer. Please see --help for more information.", std_out, out_dir)
+        log("INPUT ERROR: -hci must be an integer. Please see --help for more information.", logman)
         os._exit(1)
     hanachecker_interval = int(hanachecker_interval)*24*3600  # days to seconds
     ### one_email, -oe
@@ -847,8 +855,9 @@ def main():
             checkUserKey(dbuserkey, virtual_local_host)
             ############# MULTIPLE DATABASES #######
             for dbase in dbases:
-                ############# SQL MANAGER ##############
+                ############# SQL and LOG MANAGER ##############
                 sqlman = SQLManager(hdbsql_string, dbuserkey, dbase)
+                logman.db = dbase
                 ########## GET MINICHECK FILES FROM -ct if not -mf specified ##############
                 if check_types:        
                     tmp_sql_dir = "./tmp_sql_statements/"
@@ -857,9 +866,9 @@ def main():
                     [version, revision, mrevision] = hana_version_revision_maintenancerevision(sqlman)
                     check_files = getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision)
                 ##### GET CRITICAL MINICHECKS FROM ALL MINI-CHECK FILES (either from -ct or -mf) ############
-                critical_checks = getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, std_out, out_dir)
+                critical_checks = getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, logman)
                 ##### SEND EMAILS FOR ALL CRITICAL MINI-CHECKS THAT HAVE A CORRESPONDING EMAIL ADDRESS ######
-                sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, always_send, execution_string, dbase, std_out, out_dir)
+                sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, always_send, execution_string, logman)
                 ########### IF MINICHECK FILES FROM -ct WE HAVE TO CLEAN UP ################
                 if check_types:
                     check_files = []           

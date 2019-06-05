@@ -335,8 +335,8 @@ def get_file_revision(file_name, base_file_name, tmp_sql_dir, version):
         
 def getFileVersion(base_file_name, tmp_sql_dir, version, revision, mrevision):
     files = subprocess.check_output('ls '+tmp_sql_dir+base_file_name+'_'+str(version)+'*', shell=True).splitlines(1)
-    chosen_file_revision = 0
-    chosen_file_mrevision = 0            
+    chosen_file_revision = -1
+    chosen_file_mrevision = -1            
     chosen_file_name = ''
     for file_name in files:
         [file_revision, file_mrevision] = get_file_revision(file_name, base_file_name, tmp_sql_dir, version)
@@ -361,11 +361,7 @@ def getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision):
             else:
                 check_files.append(getFileVersion('HANA_Configuration_MiniChecks_Internal', tmp_sql_dir, version, revision, mrevision))
         elif ct == 'S':
-            files = subprocess.check_output('ls '+tmp_sql_dir+'HANA_Security_MiniChecks*', shell=True).splitlines(1)
-            if not len(files) == 1:
-                print "COMPATIBILITY ERROR: HANAChecker needs to be updated since there are now more than one security mini-check files"
-                os._exit(1)
-            check_files.append(files[0])
+            check_files.append(getFileVersion('HANA_Security_MiniChecks', tmp_sql_dir, version, revision, mrevision))
         elif ct == 'T':
             files = subprocess.check_output('ls '+tmp_sql_dir+'HANA_TraceFiles_MiniChecks*', shell=True).splitlines(1)
             if not len(files) == 1:

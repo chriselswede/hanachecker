@@ -313,8 +313,8 @@ def log(message, logman, file_name = "", recieversEmail = ""):
         if logman.emailSender:
             #MAILX (https://www.systutorials.com/5167/sending-email-using-mailx-in-linux-through-internal-smtp/):
             mailstring = 'echo "'+message+'" | mailx -s "HANAChecker: Potential Critical Mini-Check(s) '+logman.db+"@"+logman.SID+'!" -S smtp=smtp://'+logman.emailSender.mailServer+' -S from="'+logman.emailSender.senderEmail+'" '+recieversEmail
-            print mailstring
-            #subprocess.check_output(mailstring, shell=True)
+            #print mailstring
+            subprocess.check_output(mailstring, shell=True)
 
 def hana_version_revision_maintenancerevision(sqlman):
     command_run = subprocess.check_output(sqlman.hdbsql_jAU + " \"select value from sys.m_system_overview where name = 'Version'\"", shell=True)

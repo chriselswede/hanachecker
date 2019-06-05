@@ -29,6 +29,8 @@ def printHelp():
     print(" -ic     ignore checks, a list of mini-check CHIDs (seperated by commas) that should be ignored by the catch all emails (they will however          ")
     print("         still be included in the log files), default '' (not used)                                                                                 ")
     print(" -il     ignore list, a list of mini-check CHIDs (seperated by commas) that are ignored (i.e. not even in log files), default '' (not used)         ")
+    print("         ----  HOST  ----                                                                                                                           ")
+    print(" -vlh    virtual local host, if hanacleaner runs on a virtual host this can be specified, default: '' (physical host is assumed)                    ")
     print("         *** INPUT ***                                                                                                                              ")
     print(" -mf     full path(s) of a mini-check file(s)                                                                                                       ")
     print("         Example:  -mf /tmp/SQLStatements/HANA_Configuration_MiniChecks_1.00.102.01+.txt                                                            ")
@@ -243,16 +245,16 @@ def cdalias(alias):   # alias e.g. cdtrace, cdhdb, ...
         path = path + '/' + piece + '/' 
     return path            
         
-def checkUserKey(dbuserkey):
+def checkUserKey(dbuserkey, virtual_local_host):
     key_environment = subprocess.check_output('''hdbuserstore LIST '''+dbuserkey, shell=True) 
     if "NOT FOUND" in key_environment:
         print "ERROR, the key ", dbuserkey, " is not maintained in hdbuserstore."
         os._exit(1)
-    local_host = subprocess.check_output("hostname", shell=True).replace('\n','')
+    local_host = subprocess.check_output("hostname", shell=True).replace('\n','') if virtual_local_host == "" else virtual_local_host
     ENV = key_environment.split('\n')[1].replace('  ENV : ','').split(',')
     key_hosts = [env.split(':')[0] for env in ENV]
     if not local_host in key_hosts:
-        print "ERROR, local host, ", local_host, ", should be one of the hosts specified for the key, ", dbuserkey, " (see --help for more info)"
+        print "ERROR, local host, ", local_host, ", should be one of the hosts specified for the key, ", dbuserkey, " (in case of virtual, please use -vlh, see --help for more info)"
         os._exit(1)    
     
 def checkAndConvertBooleanFlag(boolean, flagstring):     
@@ -576,6 +578,7 @@ def main():
     one_email = "false"
     always_send = "false"
     ssl = "false"
+    virtual_local_host = "" #default: assume physical local host
     dbuserkeys = ["SYSTEMKEY"] # This/these KEY(S) has to be maintained in hdbuserstore  
                                # so that   hdbuserstore LIST    gives e.g. 
                                # KEY SYSTEMKEY
@@ -638,6 +641,8 @@ def main():
                         always_send = flagValue
                     if firstWord == '-ssl': 
                         ssl = flagValue
+                    if firstWord == '-vlh':
+                        virtual_local_host = flagValue
                     if firstWord == '-k':
                         dbuserkeys = [x for x in flagValue.split(',')]
                     if firstWord == '-so': 
@@ -685,6 +690,8 @@ def main():
         always_send = sys.argv[sys.argv.index('-as') + 1]
     if '-ssl' in sys.argv:
         ssl = sys.argv[sys.argv.index('-ssl') + 1]
+    if '-vlh' in sys.argv:
+        virtual_local_host = sys.argv[sys.argv.index('-vlh') + 1]
     if '-k' in sys.argv:
         dbuserkeys = [x for x in sys.argv[  sys.argv.index('-k') + 1   ].split(',')]
     if '-so' in sys.argv:
@@ -841,7 +848,7 @@ def main():
     ################ START #################
     while True: # hanachecker intervall loop
         for dbuserkey in dbuserkeys:
-            checkUserKey(dbuserkey)
+            checkUserKey(dbuserkey, virtual_local_host)
             ############# MULTIPLE DATABASES #######
             for dbase in dbases:
                 ############# SQL MANAGER ##############

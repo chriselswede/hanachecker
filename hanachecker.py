@@ -378,11 +378,14 @@ def getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision):
                 os._exit(1)
             check_files.append(files[0])
         if ct == 'P':
-            files = subprocess.check_output('ls '+tmp_sql_dir+'HANA_Configuration_Parameters_1*', shell=True).splitlines(1)
-            if not len(files) == 1:
-                print "COMPATIBILITY ERROR: HANAChecker needs to be updated since there are now more than one parameter check files"
-                os._exit(1)
-            check_files.append(files[0])
+            if version == 1:
+                files = subprocess.check_output('ls '+tmp_sql_dir+'HANA_Configuration_Parameters_1*', shell=True).splitlines(1)
+                if not len(files) == 1:
+                    print "COMPATIBILITY ERROR: HANAChecker needs to be updated since there are now more than one parameter check files"
+                    os._exit(1)
+                check_files.append(files[0])
+            else:
+                check_files.append(getFileVersion('HANA_Configuration_Parameters', tmp_sql_dir, version, revision, mrevision))
     return check_files        
         
 def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, logman): 

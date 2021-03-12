@@ -540,7 +540,7 @@ def sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, alw
                 for email in emails:
                     if email not in unique_emails:
                         unique_emails.append(email)
-        always_send_message = "HANACecker was executed "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" on "+dbstring+logman.SID+" with \n"+execution_string+"\nIf any of the mini and/or parameter checks that you are responsible for seem critical, you will be notified now.\n"
+        always_send_message = "HANAChecker was executed "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" on "+dbstring+logman.SID+" with \n"+execution_string+"\nIf any of the mini and/or parameter checks that you are responsible for seem critical, you will be notified now.\n"
         for email in unique_emails:
             messages.update({email:[always_send_message]})
         for email in parameter_emails:

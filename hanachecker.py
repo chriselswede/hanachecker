@@ -74,8 +74,6 @@ def printHelp():
     print(" TODO: test                                                                                                                                         ")
     print("       CALL SYS.STATISTICSSERVER_SENDMAIL_DEV('SMTP',25,'emailfrom',’emailto1,emailto2','Test mail from HANA system subject','Test body from HANA, body',?); ")
     print("       Implement the -en, -ens as I implemented it in HANASitter ... nicer there                                                                    ")
-    print("       Implement to do the Call Stack mini checks also ...                                                                                          ")
-    print("       Implement to send an email if e.g. the hdbuserstore key stops working                                                                        ")
     print("                                                                                                                                                    ")
     print("AUTHOR: Christian Hansen                                                                                                                            ")
     print("                                                                                                                                                    ")
@@ -157,12 +155,11 @@ class MiniCheck:
         print self.summary()
         
 class ParameterCheck:
-    def __init__(self, IniFile, Section, Parameter, Priority, DefaultValue, ConfiguredValue, RecommendedValue, SAPNote, ConfiguredLayer, Revision, Environment, CpuThreads, CpuFrequency, NumaNodes, GlobalAllocationLimit, SlaveNodes, LogVolumeSize):
+    def __init__(self, IniFile, Section, Parameter, Priority, ConfiguredValue, RecommendedValue, SAPNote, ConfiguredLayer, Revision, Environment, CpuThreads, CpuFrequency, NumaNodes, GlobalAllocationLimit, SlaveNodes, LogVolumeSize):
         self.IniFile = IniFile
         self.Section = Section
         self.Parameter = Parameter
         self.Priority = Priority
-        self.DefaultValue = DefaultValue
         self.ConfiguredValue = ConfiguredValue
         self.RecommendedValue = RecommendedValue
         self.SAPNote = SAPNote
@@ -177,10 +174,6 @@ class ParameterCheck:
         self.LogVolumeSize = LogVolumeSize
     def summary(self):
         sum = "\nParameter '"+self.Parameter+"' in configuration file '"+self.IniFile+"' and in section '"+self.Section+"'"
-        if "-- HANA internal --" in self.DefaultValue:
-            sum += " has an internal default value"
-        else:
-            sum += " has default value '"+self.DefaultValue+"'"
         if "-- not set --" in self.ConfiguredValue:
             sum += ", is not configured"
         else:
@@ -210,9 +203,7 @@ class ParameterCheck:
             sum += "  SlaveNodes: "+self.SlaveNodes
         if self.LogVolumeSize:
             sum += "  LogVolumeSize: "+self.LogVolumeSize
-        return sum
-    def printParameterCheck(self):  
-        print self.summary()        
+        return sum     
         
 class SQLWithRecommendation:
     def __init__(self, Hash, Type, Origin, Engine):
@@ -237,8 +228,6 @@ class SQLWithRecommendation:
         sum = "\nSQL statement "+self.Hash+" is one of the most expensive statements in the SQL cache and there is a recommendation available in SAP Note 2000002.\n"
         sum += "This SQL statement is of type "+self.Type+", originates from "+self.Origin+", and executed by the "+self.Engine+" engine."
         return sum
-    def printParameterCheck(self):  
-        print self.summary()  
 
 class LogManager:
     def __init__(self, std_out, out_dir, SID, emailSender = "", db = ""):
@@ -518,25 +507,30 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                         section = line[2]
                         parameter = line[3]
                         priority = line[4]
-                        defaultvalue = line[5]
-                        configuredvalue= line[6]
-                        recommendedvalue = line[7]
-                        sapnote = line[8]
-                        configuredlayer = line[9]
+                        if "90+" in check_file:   #has a default value on position [5] that we will not take
+                            configuredvalue= line[6]
+                            recommendedvalue = line[7]
+                            sapnote = line[8]
+                            configuredlayer = line[9]
+                        else:
+                            configuredvalue= line[5]
+                            recommendedvalue = line[6]
+                            sapnote = line[7]
+                            configuredlayer = line[8]
                         if not ignore_dublicated_parameter or not parameter_is_dublicate(inifile, section, parameter, configuredvalue, critical_parameter_checks):
                             if not ignore_check_why_set or not "-- check why set --" in recommendedvalue:                                                        
                                 if parameter in ['allocationlimit', 'statement_memory_limit', 'max_partitions_limited_by_locations']: 
-                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', global_allocation_limit, '', ''))    
+                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', global_allocation_limit, '', ''))    
                                 elif parameter in ['default_statement_concurrency_limit', 'max_concurrency', 'max_concurrency_hint', 'num_cores', 'max_gc_parallelity', 'tables_preloaded_in_parallel']:
-                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, cputhreads, '', '', '', '', ''))    
+                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, cputhreads, '', '', '', '', ''))    
                                 elif parameter in ['savepoint_pre_critical_flush_retry_threshold']:
-                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', cpufrequency, '', '', '', ''))           
+                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', cpufrequency, '', '', '', ''))           
                                 elif parameter in ['logshipping_max_retention_size']:
-                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', log_volume_size))
+                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', log_volume_size))
                                 elif parameter in ['max_partitions']: 
-                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', global_allocation_limit, slave_nodes, ''))    
+                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', global_allocation_limit, slave_nodes, ''))    
                                 else:    
-                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', ''))
+                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', ''))
                 elif checkType == 'R':
                     if line[4] == 'R':
                         sql_hash = line[1]

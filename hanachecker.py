@@ -837,7 +837,7 @@ def main():
             print "INPUT ERROR: -ct should not contain duplicates. Please see --help for more information."
             os._exit(1)
     ### active_threads, -at
-    if not is_number(active_threads):
+    if active_threads and not is_number(active_threads):
         log("INPUT ERROR: -at must be a number. Please see --help for more information.", logman)
         os._exit(1)
     if active_threads and not 'C' in check_types:

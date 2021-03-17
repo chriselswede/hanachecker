@@ -39,10 +39,10 @@ def printHelp():
     print(" -zf     full path to SQLStatement.zip (cannot be used together with -mf and must be used together with -ct), default '' (not used)                 ")
     print("         Example:  -zf SQLStatements.zip  (if the zip file is located in same directory as hanachecker.py)                                          ")
     print(" -ct     check types, specifies what types of mini-checks to executes (must be used together with -zf), default '' (not used)                       ")
-    print("         Example:  -ct M,I,S,T,P,C   (in this example all possible mini-check types; mini, internal, security, trace, parameter, and call stacks    ")
-    print("                                      would be executed)                                                                                            ")
+    print("         Example:  -ct M,I,S,T,P,C,R   (in this example all possible mini-check types; mini, internal, security, trace, parameter, call stacks,     ")
+    print("                                        and SQL recommendations would be executed)                                                                  ")
     print(" -ff     flag file, full path to a file that contains input flags, each flag in a new line, all lines in the file that does not start with a        ")
-    print("         flag are considered comments, if this flag is used no other flags should be given, default: '' (not used)                                  ")
+    print("         flag are considered comments,                                                      default: '' (not used)                                  ")
     print("         *** OUTPUT ***                                                                                                                             ")
     print(" -od     output directory, full path of the folder where the log files will end up (if not exist it will be created),                               ")
     print("         default: '/tmp/hanachecker_output'                                                                                                         ")
@@ -405,6 +405,13 @@ def getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision, active
                 check_files.append(cs_mc_file_temp)
             else:
                 check_files.append(getFileVersion('HANA_Threads_Callstacks_MiniChecks', tmp_sql_dir, version, revision, mrevision))
+        elif ct == 'R':
+            check_files.append(getFileVersion('HANA_SQL_SQLCache_TopList', tmp_sql_dir, version, revision, mrevision))
+
+            #TEMP
+            print "check_files = ", check_files
+            os._exit(1)
+
     return check_files        
         
 def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, logman): 
@@ -430,6 +437,8 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
             checkType = 'P'
         elif 'Callstacks' in check_file:
             checkType = 'C'
+        elif 'SQLCache_TopLists' in check_file:
+            checkType = 'R'
         try:
             result = subprocess.check_output(sqlman.hdbsql_jAaxU + ' -I '+check_file, shell=True).splitlines()
         except:
@@ -457,10 +466,10 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                         slave_nodes = line[2]
                     elif "Log volume size (GB):" in line[1]:
                         log_volume_size = line[2]
-                    elif line[10] and line[11]:  
+                    elif line[9] and line[10]:    # if implementation and undo command exist then
                         if cputhreads == '0' or cpufrequency == '0' or numa_nodes == '?' or global_allocation_limit == '?' or log_volume_size == '?':
                             log("PRIVILEGE ERROR: The user represented by the key in the hdbuserstore has insufficient privileges.", logman)
-                            log("Make sure he has sufficient privilges to read these:", logman)
+                            log("Make sure he has sufficient privileges to read these:", logman)
                             log("CPU threads: "+cputhreads+"   CPU frequency: "+cpufrequency+"   NUMA nodes: "+numa_nodes+"   GAL (GB): "+global_allocation_limit+"   Log volume size (GB): "+log_volume_size, logman)
                             log("Suggestion: The role MONITORING could help.", logman)
                             os._exit(1)                           
@@ -487,6 +496,7 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                                     critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', global_allocation_limit, slave_nodes, ''))    
                                 else:    
                                     critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', ''))
+                #elif checkType == 'R':
                 elif is_check_id(line[1]):
                     if not line[1] in ignore_checks:
                         if checkType == 'T':

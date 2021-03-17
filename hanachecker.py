@@ -16,9 +16,11 @@ def printHelp():
     print(" -<CHID> mini-check to email address, if that particular mini-check specifed by the flag is potential critical an email is sent to the address      ")
     print("         specified by the value of the flag, e.g. -M0230 peter@ourcompany.com, then Peter will get an email if CHID 230 shows an X in C.            ")
     print(" -cg     mini-check groups, groupings of mini-checks with responsible email addresses associated, example:                                          ")
-    print("         -cg M0001-M1500,peter@ourcompany.com,M1501-M3000,sara@ourcompany.com,M3001-M5000,chris@ourcompany.com                                      ")
+    print("         -cg M0001-M1500,peter@ourcompany.com,M1501-M3000,sara@ourcompany.com,S0100-S0200,chris@ourcompany.com                                        ")
     print(" -pe     parameter emails, a comma seperated list of emails that catches all parameter checks, default '' (not used)                                ")
     print("         Note: This only makes sense if HANA_Configuration_Parameters is included in the input, either with -mf, or -ct P                           ")
+    print(" -se     sql emails, a comma seperated list of emails that catches all sql statements with recommendation in SAP Note 2000002, default '' (not used)")
+    print("         Note: This only makes sense if HANA_SQL_SQLCache_TopLists is included in the input, either with -mf, or -ct R                              ")
     print(" -is     ignore check_why_set parameter, if this is true parameter with recommended value 'check why set' are ignored, default false                ")
     print(" -at     active threads, set MIN_ACTIVE_THREADS in modification section in the Call Stacks Minichecks, default '' (not used, i.e. 0.2)              ")
     print(" -ip     ignore dublicated parameter, parameters that are set to same value in different layers will only be mentioned once, default true           ")
@@ -211,6 +213,32 @@ class ParameterCheck:
     def printParameterCheck(self):  
         print self.summary()        
         
+class SQLWithRecommendation:
+    def __init__(self, Hash, Type, Origin, Engine):
+        self.Hash = Hash
+        sql_types = {"AI":"ALTER INDEX", "AS":"ALTER SYSTEM", "AT":"ALTER TABLE", "AL":"ALTER", "CA":"CALL", "CI":"CREATE INDEX", "CO":"COMMIT", "CR":"CREATE", "DE":"DELETE", "DI":"DROP INDEX", "DM":"Data Modification", "DT":"DROP TABLE", "DR":"DROP", "EX":"EXECUTE", "IN":"INSERT", "RE":"REPLACE", "RO":"ROLLBACK", "SU":"SELECT FOR UPDATE", "SE":"SELECT", "ST":"START TASK", "TR":"TRUNCATE", "UP":"UPDATE", "US":"UPSERT", "WI":"WITH"}
+        if Type in sql_types:
+            self.Type = sql_types[Type]
+        else:
+            self.Type = " Unknown Type "
+        self.Type = Type
+        sql_origins = {"AB": "ABAP", "BA": "Backup Scheduler", "CO": "SAP HANA Cockpit", "CR": "Crystal reports", "DS": "Data Services", "EW": "Extended warehouse management", "FC": "Business Objects", "HA": "SAP Host Agenet", "HQ": "hdbsql", "HS": "SAP HANA Studio", "IA": "Information Access", "IF": "Informatica", "IN": "Internal Request", "IS": "indexserver", "LU": "Lumira", "MS": "MicroStrategy",  "PA": "Patrol", "PY": "Python", "RT": "R3trans", "SC": "sapdbctrl", "SD": "SDA", "ST": "Statistics server", "TA": "Tableau", "UN": "unknown", "VO": "SAP HANA Vora", "WI": "Web Intelligence", "XC": "XS Classic", "XS": "XSA",  "XI": "XimoStudio", "XM": "XML/A"}
+        if Origin in sql_origins:
+            self.Origin = sql_origins[Origin]
+        else:
+            self.Origin = " No SQL Origin Specified "
+        engines = {"C":"Column", "E":"ESX", "H":"HEX", "O":"OLAP", "R":"Row"}
+        if Engine in engines:
+            self.Engine = engines[Engine]
+        else:
+            self.Engine = " Unknown Engine "
+    def summary(self):
+        sum = "\nSQL statement "+self.Hash+" is one of the most expensive statements in the SQL cache and there is a recommendation available in SAP Note 2000002.\n"
+        sum += "This SQL statement is of type "+self.Type+", originates from "+self.Origin+", and executed by the "+self.Engine+" engine."
+        return sum
+    def printParameterCheck(self):  
+        print self.summary()  
+
 class LogManager:
     def __init__(self, std_out, out_dir, SID, emailSender = "", db = ""):
         self.std_out = std_out
@@ -229,6 +257,8 @@ class SQLManager:
         else:            
             self.hdbsql_jAU = hdbsql_string + " -j -A -U " + self.key
             self.hdbsql_jAaxU = hdbsql_string + " -j -A -a -x -U " + self.key
+
+
 
 ######################## DEFINE FUNCTIONS ################################
 
@@ -406,12 +436,7 @@ def getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision, active
             else:
                 check_files.append(getFileVersion('HANA_Threads_Callstacks_MiniChecks', tmp_sql_dir, version, revision, mrevision))
         elif ct == 'R':
-            check_files.append(getFileVersion('HANA_SQL_SQLCache_TopList', tmp_sql_dir, version, revision, mrevision))
-
-            #TEMP
-            print "check_files = ", check_files
-            os._exit(1)
-
+            check_files.append(getFileVersion('HANA_SQL_SQLCache_TopLists', tmp_sql_dir, version, revision, mrevision))
     return check_files        
         
 def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, logman): 
@@ -425,6 +450,7 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
     log_volume_size = ''
     critical_mini_checks = []
     critical_parameter_checks = []
+    sqls_with_recommendation = []
     for check_file in check_files:
         checkType = 'M'
         if 'Internal' in check_file:
@@ -496,7 +522,14 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                                     critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', global_allocation_limit, slave_nodes, ''))    
                                 else:    
                                     critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, defaultvalue, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', ''))
-                #elif checkType == 'R':
+                elif checkType == 'R':
+                    if line[4] == 'R':
+                        sql_hash = line[1]
+                        if not hash_is_dublicate(sql_hash, sqls_with_recommendation):
+                            sql_type = line[2]
+                            origin = line[3]
+                            engine = line[4] 
+                            sqls_with_recommendation.append(SQLWithRecommendation(sql_hash, sql_type, origin, engine))
                 elif is_check_id(line[1]):
                     if not line[1] in ignore_checks:
                         if checkType == 'T':
@@ -536,11 +569,17 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                                 critical_mini_checks.append(MiniCheck(checkId, '', description, host, '', '', '', '', value, expected_value, potential_critical, sap_note, ''))
                             old_checkId = line[1] if line[1] else old_checkId
                             old_description = line[2] if line[2] else old_description    
-    return [critical_mini_checks, critical_parameter_checks]
+    return [critical_mini_checks, critical_parameter_checks, sqls_with_recommendation]
     
 def parameter_is_dublicate(inifile, section, parameter, configuredvalue, critical_parameter_checks): #find parameters set to same value in different layers
     for check in critical_parameter_checks:
         if inifile == check.IniFile and section == check.Section and parameter == check.Parameter and configuredvalue == check.ConfiguredValue:
+            return True
+    return False
+
+def hash_is_dublicate(hash, sqls_with_recommendation): 
+    for sql in sqls_with_recommendation:
+        if hash == sql.Hash:
             return True
     return False
     
@@ -570,9 +609,10 @@ def addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks_for_
                     checkEmailDict[checkType][checkNumber] = catch_all_emails  
     return checkEmailDict
     
-def sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, always_send, execution_string, logman):
+def sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, one_email, always_send, execution_string, logman):
     critical_mini_checks = critical_checks[0]
     critical_parameter_checks = critical_checks[1]
+    sqls_with_recommendation = critical_checks[2]
     messages = {}
     dbstring = ""
     if len(logman.db) > 1:
@@ -590,6 +630,9 @@ def sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, alw
         for email in parameter_emails:
             if email not in unique_emails:
                 messages.update({email:[always_send_message]})
+        for email in sql_emails:
+            if email not in unique_emails:
+                messages.update({email:[always_send_message]})
     for check in critical_mini_checks:
         if check.Number in list(checkEmailDict[check.Type].keys()):
             for email in checkEmailDict[check.Type][check.Number]:
@@ -603,6 +646,12 @@ def sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, alw
                 messages[email].append(check.summary())
             else:
                 messages.update({email:[check.summary()]})
+    for sql in sqls_with_recommendation:
+        for email in sql_emails:
+            if email in messages:
+                messages[email].append(sql.summary())
+            else:
+                messages.update({email:[sql.summary()]})
     for email, messages_for_email in messages.items():
         if one_email:
             message = "\n".join(messages_for_email)
@@ -646,6 +695,7 @@ def main():
     checkEmailDict = {'M':{}, 'I':{}, 'S':{}, 'T':{}, 'C':{}}  #mini, internal, security, trace, call stack
     check_groups = []
     parameter_emails = []
+    sql_emails = []
     catch_all_emails = []
     ignore_checks_for_ca = []
     ignore_checks = []
@@ -718,6 +768,8 @@ def main():
                         check_groups = [x for x in flagValue.split(',')]
                     if firstWord == '-pe': 
                         parameter_emails = [x for x in flagValue.split(',')]
+                    if firstWord == '-se': 
+                        sql_emails = [x for x in flagValue.split(',')]
                     if firstWord == '-ca': 
                         catch_all_emails = [x for x in flagValue.split(',')]
                     if firstWord == '-ic': 
@@ -769,6 +821,8 @@ def main():
         check_groups = [x for x in sys.argv[  sys.argv.index('-cg') + 1   ].split(',')]
     if '-pe' in sys.argv:
         parameter_emails = [x for x in sys.argv[  sys.argv.index('-pe') + 1   ].split(',')]
+    if '-se' in sys.argv:
+        sql_emails = [x for x in sys.argv[  sys.argv.index('-se') + 1   ].split(',')]
     if '-ca' in sys.argv:
         catch_all_emails = [x for x in sys.argv[  sys.argv.index('-ca') + 1   ].split(',')]
     if '-ic' in sys.argv:
@@ -840,8 +894,8 @@ def main():
         os._exit(1)
     if check_types:
         for ct in check_types:
-            if ct not in ['M', 'I', 'S', 'T', 'P', 'C']:
-                print "INPUT ERROR: -ct must be a comma seperated list where the elements can only be M, I, S, T, P, or C. Please see --help for more information."
+            if ct not in ['M', 'I', 'S', 'T', 'P', 'C', 'R']:
+                print "INPUT ERROR: -ct must be a comma seperated list where the elements can only be M, I, S, T, P, C, or R. Please see --help for more information."
                 os._exit(1)
         if len(check_types) != len(set(check_types)): # if duplicates
             print "INPUT ERROR: -ct should not contain duplicates. Please see --help for more information."
@@ -906,6 +960,13 @@ def main():
                 print "INPUT ERROR: -pe must be in the format email,email,email and so on. Please see --help for more information."
                 os._exit(1)     
     parameter_emails.extend(catch_all_emails)   # catch-all-emails also catch parameter critical checks
+    ### sql_emails, -se
+    if len(sql_emails):
+        for se in sql_emails:
+            if not is_email(se):
+                print "INPUT ERROR: -se must be in the format email,email,email and so on. Please see --help for more information."
+                os._exit(1)     
+    sql_emails.extend(catch_all_emails)         # catch-all-emails also catch sql statements with recommendations
     ### dbases, -dbs, and dbuserkeys, -k
     if len(dbases) > 1 and len(dbuserkeys) > 1:
         log("INPUT ERROR: -k may only specify one key if -dbs is used. Please see --help for more information.", logman)
@@ -930,7 +991,7 @@ def main():
                 ##### GET CRITICAL MINICHECKS FROM ALL MINI-CHECK FILES (either from -ct or -mf) ############
                 critical_checks = getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, logman)
                 ##### SEND EMAILS FOR ALL CRITICAL MINI-CHECKS THAT HAVE A CORRESPONDING EMAIL ADDRESS ######
-                sendEmails(critical_checks, checkEmailDict, parameter_emails, one_email, always_send, execution_string, logman)
+                sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, one_email, always_send, execution_string, logman)
                 ########### IF MINICHECK FILES FROM -ct WE HAVE TO CLEAN UP ################
                 if check_types:
                     check_files = []           

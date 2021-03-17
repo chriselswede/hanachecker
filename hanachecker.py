@@ -16,11 +16,12 @@ def printHelp():
     print(" -<CHID> mini-check to email address, if that particular mini-check specifed by the flag is potential critical an email is sent to the address      ")
     print("         specified by the value of the flag, e.g. -M0230 peter@ourcompany.com, then Peter will get an email if CHID 230 shows an X in C.            ")
     print(" -cg     mini-check groups, groupings of mini-checks with responsible email addresses associated, example:                                          ")
-    print("         -cg M0001-M1500,peter@ourcompany.com,M1501-M3000,sara@ourcompany.com,S0100-S0200,chris@ourcompany.com                                        ")
+    print("         -cg M0001-M1500,peter@ourcompany.com,M1501-M3000,sara@ourcompany.com,S0100-S0200,chris@ourcompany.com                                      ")
     print(" -pe     parameter emails, a comma seperated list of emails that catches all parameter checks, default '' (not used)                                ")
     print("         Note: This only makes sense if HANA_Configuration_Parameters is included in the input, either with -mf, or -ct P                           ")
     print(" -se     sql emails, a comma seperated list of emails that catches all sql statements with recommendation in SAP Note 2000002, default '' (not used)")
     print("         Note: This only makes sense if HANA_SQL_SQLCache_TopLists is included in the input, either with -mf, or -ct R                              ")
+    print(" -ee     error emails, a comma seperated list of emails that recieves the most important HANAChecker errors, default '' (not used)                  ")
     print(" -is     ignore check_why_set parameter, if this is true parameter with recommended value 'check why set' are ignored, default false                ")
     print(" -at     active threads, set MIN_ACTIVE_THREADS in modification section in the Call Stacks Minichecks, default '' (not used, i.e. 0.2)              ")
     print(" -ip     ignore dublicated parameter, parameters that are set to same value in different layers will only be mentioned once, default true           ")
@@ -292,16 +293,23 @@ def cdalias(alias):   # alias e.g. cdtrace, cdhdb, ...
         path = path + '/' + piece + '/' 
     return path       
         
-def checkUserKey(dbuserkey, virtual_local_host):
-    key_environment = subprocess.check_output('''hdbuserstore LIST '''+dbuserkey, shell=True) 
-    if "NOT FOUND" in key_environment:
-        print "ERROR, the key ", dbuserkey, " is not maintained in hdbuserstore."
+def checkUserKey(dbuserkey, virtual_local_host, logman, error_emails):
+    try: 
+        key_environment = subprocess.check_output('''hdbuserstore LIST '''+dbuserkey, shell=True) 
+        if "NOT FOUND" in key_environment:
+            message = "ERROR, the key "+dbuserkey+" is not maintained in hdbuserstore."
+            log_with_emails(message, logman, error_emails)
+            os._exit(1)
+    except:
+        message = "ERROR, the key "+dbuserkey+" is not maintained in hdbuserstore."
+        log_with_emails(message, logman, error_emails)
         os._exit(1)
     local_host = subprocess.check_output("hostname", shell=True).replace('\n','') if virtual_local_host == "" else virtual_local_host
     ENV = key_environment.split('\n')[1].replace('  ENV : ','').split(',')
     key_hosts = [env.split(':')[0] for env in ENV]
     if not local_host in key_hosts:
-        print "ERROR, local host, ", local_host, ", should be one of the hosts specified for the key, ", dbuserkey, " (in case of virtual, please use -vlh, see --help for more info)"
+        message = "ERROR, local host, "+local_host+", should be one of the hosts specified for the key, "+dbuserkey+" (in case of virtual, please use -vlh, see --help for more info)"
+        log_with_emails(message, logman, error_emails)
         os._exit(1)    
     
 def checkAndConvertBooleanFlag(boolean, flagstring):     
@@ -351,9 +359,16 @@ def log(message, logman, file_name = "", recieversEmail = ""):
     if recieversEmail:
         if logman.emailSender:
             #MAILX (https://www.systutorials.com/5167/sending-email-using-mailx-in-linux-through-internal-smtp/):
-            mailstring = 'echo "'+message.replace('"','')+'" | mailx -s "HANAChecker: Potential Critical Mini-Check(s) '+logman.db+"@"+logman.SID+'!" -S smtp=smtp://'+logman.emailSender.mailServer+' -S from="'+logman.emailSender.senderEmail+'" '+recieversEmail
+            mailstring = 'echo "'+message.replace('"','')+'" | mailx -s "HANAChecker: Potential Critical Situation(s) '+logman.db+"@"+logman.SID+'!" -S smtp=smtp://'+logman.emailSender.mailServer+' -S from="'+logman.emailSender.senderEmail+'" '+recieversEmail
             #print mailstring
             subprocess.check_output(mailstring, shell=True)
+
+def log_with_emails(message, logman, error_emails):
+    if error_emails:
+        for error_email in error_emails:
+            log(message, logman, recieversEmail = error_email)
+    else:
+        log(message, logman)
 
 def hana_version_revision_maintenancerevision(sqlman):
     command_run = subprocess.check_output(sqlman.hdbsql_jAU + " \"select value from sys.m_system_overview where name = 'Version'\"", shell=True)
@@ -571,6 +586,20 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                             old_description = line[2] if line[2] else old_description    
     return [critical_mini_checks, critical_parameter_checks, sqls_with_recommendation]
     
+def ping_db(sqlman, logman, error_emails):
+    with open(os.devnull, 'w') as devnull:  # just to get no stdout in case HANA is offline
+        try:
+            command_run = subprocess.check_output(sqlman.hdbsql_jAaxU + ' "select * from dummy"', shell=True, stderr=devnull).splitlines(1)
+            output = command_run[0].strip("\n").strip("|").strip(" ")
+            if not output == 'X':
+                message = "CONNECTION ERROR: Something went wrong getting results from an SQL from database "+sqlman.db+" with user "+sqlman.key+".\n"
+                log_with_emails(message, logman, error_emails)
+                os._exit(1)
+        except:
+            message = "CONNECTION ERROR: Something went wrong connecting to the database "+sqlman.db+" with user "+sqlman.key+".\n"
+            log_with_emails(message, logman, error_emails)
+            os._exit(1)
+
 def parameter_is_dublicate(inifile, section, parameter, configuredvalue, critical_parameter_checks): #find parameters set to same value in different layers
     for check in critical_parameter_checks:
         if inifile == check.IniFile and section == check.Section and parameter == check.Parameter and configuredvalue == check.ConfiguredValue:
@@ -696,6 +725,7 @@ def main():
     check_groups = []
     parameter_emails = []
     sql_emails = []
+    error_emails = []
     catch_all_emails = []
     ignore_checks_for_ca = []
     ignore_checks = []
@@ -770,6 +800,8 @@ def main():
                         parameter_emails = [x for x in flagValue.split(',')]
                     if firstWord == '-se': 
                         sql_emails = [x for x in flagValue.split(',')]
+                    if firstWord == '-ee': 
+                        error_emails = [x for x in flagValue.split(',')]
                     if firstWord == '-ca': 
                         catch_all_emails = [x for x in flagValue.split(',')]
                     if firstWord == '-ic': 
@@ -823,6 +855,8 @@ def main():
         parameter_emails = [x for x in sys.argv[  sys.argv.index('-pe') + 1   ].split(',')]
     if '-se' in sys.argv:
         sql_emails = [x for x in sys.argv[  sys.argv.index('-se') + 1   ].split(',')]
+    if '-ee' in sys.argv:
+        error_emails = [x for x in sys.argv[  sys.argv.index('-ee') + 1   ].split(',')]
     if '-ca' in sys.argv:
         catch_all_emails = [x for x in sys.argv[  sys.argv.index('-ca') + 1   ].split(',')]
     if '-ic' in sys.argv:
@@ -967,20 +1001,29 @@ def main():
                 print "INPUT ERROR: -se must be in the format email,email,email and so on. Please see --help for more information."
                 os._exit(1)     
     sql_emails.extend(catch_all_emails)         # catch-all-emails also catch sql statements with recommendations
+    ### error_emails, -ee
+    if len(error_emails):
+        for ee in error_emails:
+            if not is_email(ee):
+                print "INPUT ERROR: -ee must be in the format email,email,email and so on. Please see --help for more information."
+                os._exit(1)     
+    error_emails.extend(catch_all_emails)         # catch-all-emails also catch the most important HANAChecker errors
     ### dbases, -dbs, and dbuserkeys, -k
     if len(dbases) > 1 and len(dbuserkeys) > 1:
-        log("INPUT ERROR: -k may only specify one key if -dbs is used. Please see --help for more information.", logman)
+        message = "INPUT ERROR: -k may only specify one key if -dbs is used. Please see --help for more information."
+        log_with_emails(message, logman, error_emails)
         os._exit(1)
 
     ################ START #################
     while True: # hanachecker intervall loop
         for dbuserkey in dbuserkeys:
-            checkUserKey(dbuserkey, virtual_local_host)
+            checkUserKey(dbuserkey, virtual_local_host, logman, error_emails)
             ############# MULTIPLE DATABASES #######
             for dbase in dbases:
-                ############# SQL and LOG MANAGER ##############
+                ############# SQL and LOG MANAGER and CHECK DB CONNECTION ##############
                 sqlman = SQLManager(hdbsql_string, dbuserkey, dbase)
                 logman.db = dbase
+                ping_db(sqlman, logman, error_emails)
                 ########## GET MINICHECK FILES FROM -ct if not -mf specified ##############
                 if check_types:        
                     tmp_sql_dir = "./tmp_sql_statements/"

@@ -359,88 +359,82 @@ def log_with_emails(message, logman, error_emails):
     else:
         log(message, logman)
 
-def hana_version_revision_maintenancerevision(sqlman):
+def hana_version_revision(sqlman):
     command_run = subprocess.check_output(sqlman.hdbsql_jAU + " \"select value from sys.m_system_overview where name = 'Version'\"", shell=True)
     hanaver = command_run.splitlines(1)[2].split('.')[0].replace('| ','')
     hanarev = command_run.splitlines(1)[2].split('.')[2]
-    hanamrev = command_run.splitlines(1)[2].split('.')[3]
+    #hanamrev = command_run.splitlines(1)[2].split('.')[3]   #We dont need the maintenence revision
     if not is_integer(hanarev):
         print "ERROR: something went wrong checking hana revision."
         os._exit(1)
-    return [int(hanaver), int(hanarev), int(hanamrev)]
+    return [int(hanaver), int(hanarev)]
 
-def get_file_revision(file_name, base_file_name, tmp_sql_dir, version):
-    file_revision = file_name.split(tmp_sql_dir+base_file_name+'_'+str(version)+'.00')[1].split('+')[0] 
-    if file_revision == '':
-        file_revision = 0
+def get_file_revision_number_str(file_name, base_file_name, tmp_sql_dir):
+    if '+' not in file_name:
+        file_revision = '0'
     else:
-        file_revision = file_revision.lstrip('.')
-    if '.' in file_revision:
-        file_mrevision = int(file_revision.split('.')[1])
-        file_revision = int(file_revision.split('.')[0])
-    else:
-        file_mrevision = 0
-    return [file_revision, file_mrevision]                    
+        file_revision = file_name.split(tmp_sql_dir+base_file_name+'_')[1].split('+')[0] 
+        if not file_revision:
+            file_revision = '0'
+        file_revision = file_revision.split('.')
+        if len(file_revision) >= 3:
+            file_revision = file_revision[0]+file_revision[1]+file_revision[2]  #hopefully we never need to care about maintanance revision 
+    return file_revision 
+
+def get_revision_number_str(version, revision):
+    if revision < 10:
+        revision_str = '0000'+str(revision)
+    elif revision < 100:
+        revision_str = '000'+str(revision)
+    return str(version)+revision_str                   
         
-def getFileVersion(base_file_name, tmp_sql_dir, version, revision, mrevision):
-    files = subprocess.check_output('ls '+tmp_sql_dir+base_file_name+'_'+str(version)+'*', shell=True).splitlines(1)
-    chosen_file_revision = -1
-    chosen_file_mrevision = -1            
-    chosen_file_name = ''
+def getFileVersion(base_file_name, tmp_sql_dir, version, revision):
+    revision_number_str = get_revision_number_str(version, revision)
+    try:
+        output = subprocess.check_output('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt', shell=True, stderr=subprocess.STDOUT) #removes SHC
+    except Exception, e:
+        output = str(e.output)
+    output = output.splitlines(1)
+    files = [f.strip('\n') for f in output if not 'cannot access' in f]
+    if len(files) == 0:
+        print "ERROR: There were no on-premise files found with name "+base_file_name+", files = ", files
+        os._exit(1)
+    chosen_file_name = files[0] 
     for file_name in files:
-        [file_revision, file_mrevision] = get_file_revision(file_name, base_file_name, tmp_sql_dir, version)
-        if (int(file_revision) <= int(revision) and int(chosen_file_revision) < int(file_revision)) or (int(file_mrevision) <= int(mrevision) and int(chosen_file_revision) == int(file_revision) and int(chosen_file_mrevision) < int(file_mrevision)):
+        file_revision_number_str = get_file_revision_number_str(file_name, base_file_name, tmp_sql_dir)
+        choosen_file_revision_number_str = get_file_revision_number_str(chosen_file_name, base_file_name, tmp_sql_dir)
+        if int(file_revision_number_str) <= int(revision_number_str) and int(choosen_file_revision_number_str) < int(file_revision_number_str):
             chosen_file_name = file_name
-            chosen_file_revision = file_revision
-            chosen_file_mrevision = file_mrevision
     return chosen_file_name
 
-def getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision, active_threads):
+def getCheckFiles(tmp_sql_dir, check_types, version, revision, active_threads):
     check_files = []
     for ct in check_types:
         if ct == 'M':
-            check_files.append(getFileVersion('HANA_Configuration_MiniChecks', tmp_sql_dir, version, revision, mrevision))    
+            check_files.append(getFileVersion('HANA_Configuration_MiniChecks', tmp_sql_dir, version, revision))    
         elif ct == 'I':
-            if version == 1:
-                files = subprocess.check_output('ls '+tmp_sql_dir+'HANA_Configuration_MiniChecks_Internal_1*', shell=True).splitlines(1)
-                if not len(files) == 1:
-                    print "COMPATIBILITY ERROR: HANAChecker needs to be updated since there are now more than one internal mini-check files for HANA 1"
-                    os._exit(1)
-                check_files.append(files[0])
-            else:
-                check_files.append(getFileVersion('HANA_Configuration_MiniChecks_Internal', tmp_sql_dir, version, revision, mrevision))
+            check_files.append(getFileVersion('HANA_Configuration_MiniChecks_Internal', tmp_sql_dir, version, revision))
         elif ct == 'S':
-            check_files.append(getFileVersion('HANA_Security_MiniChecks', tmp_sql_dir, version, revision, mrevision))
+            check_files.append(getFileVersion('HANA_Security_MiniChecks', tmp_sql_dir, version, revision))
         elif ct == 'T':
-            files = subprocess.check_output('ls '+tmp_sql_dir+'HANA_TraceFiles_MiniChecks*', shell=True).splitlines(1)
-            if not len(files) == 1:
-                print "COMPATIBILITY ERROR: HANAChecker needs to be updated since there are now more than one tracefiles mini-check files"
-                os._exit(1)
-            check_files.append(files[0])
+            check_files.append(getFileVersion('HANA_TraceFiles_MiniChecks', tmp_sql_dir, version, revision))
         elif ct == 'P':
-            if version == 1:
-                files = subprocess.check_output('ls '+tmp_sql_dir+'HANA_Configuration_Parameters_1*', shell=True).splitlines(1)
-                if not len(files) == 1:
-                    print "COMPATIBILITY ERROR: HANAChecker needs to be updated since there are now more than one parameter check files"
-                    os._exit(1)
-                check_files.append(files[0])
-            else:
-                check_files.append(getFileVersion('HANA_Configuration_Parameters', tmp_sql_dir, version, revision, mrevision))
+            check_files.append(getFileVersion('HANA_Configuration_Parameters', tmp_sql_dir, version, revision))
         elif ct == 'C':
-            if active_threads:
-                cs_mc_file = getFileVersion('HANA_Threads_Callstacks_MiniChecks', tmp_sql_dir, version, revision, mrevision).strip('\n')
+            if active_threads:  # then must change modification section
+                cs_mc_file = getFileVersion('HANA_Threads_Callstacks_MiniChecks', tmp_sql_dir, version, revision).strip('\n')
                 cs_mc_file_temp = tmp_sql_dir+"HANA_Threads_Callstacks_MiniChecks_Temp.txt"
                 fin = open(cs_mc_file, "rt")
-                fout = open(cs_mc_file_temp, "wt") # will be removed then tmp_sql_dir is removed 
+                fout = open(cs_mc_file_temp, "wt") # will be removed when tmp_sql_dir is removed 
                 for line in fin:
 	                fout.write(line.replace('0.2 MIN_ACTIVE_THREADS', active_threads+' MIN_ACTIVE_THREADS'))
                 fin.close()
                 fout.close()
                 check_files.append(cs_mc_file_temp)
             else:
-                check_files.append(getFileVersion('HANA_Threads_Callstacks_MiniChecks', tmp_sql_dir, version, revision, mrevision))
+                check_files.append(getFileVersion('HANA_Threads_Callstacks_MiniChecks', tmp_sql_dir, version, revision))
         elif ct == 'R':
-            check_files.append(getFileVersion('HANA_SQL_SQLCache_TopLists', tmp_sql_dir, version, revision, mrevision))
+            check_files.append(getFileVersion('HANA_SQL_SQLCache_TopLists', tmp_sql_dir, version, revision))
     return check_files        
         
 def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, logman): 
@@ -1023,8 +1017,8 @@ def main():
                     tmp_sql_dir = "./tmp_sql_statements/"
                     zip_ref = zipfile.ZipFile(zip_file, 'r')
                     zip_ref.extractall(tmp_sql_dir) 
-                    [version, revision, mrevision] = hana_version_revision_maintenancerevision(sqlman)
-                    check_files = getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision, active_threads)
+                    [version, revision] = hana_version_revision(sqlman)
+                    check_files = getCheckFiles(tmp_sql_dir, check_types, version, revision, active_threads)
                 ##### GET CRITICAL MINICHECKS FROM ALL MINI-CHECK FILES (either from -ct or -mf) ############
                 critical_checks = getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, logman)
                 ##### SEND EMAILS FOR ALL CRITICAL MINI-CHECKS THAT HAVE A CORRESPONDING EMAIL ADDRESS ######

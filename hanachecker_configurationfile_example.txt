@@ -1,11 +1,85 @@
-Comp's HANA CHECKER Configuration File:
+ An Example of a HANA CHECKER Configuration File: 
+#------------------------------------------------#
 
--mf HANA_Configuration_MiniChecks_1.00.120+.txt,HANA_Security_MiniChecks.txt
--en chris@comp.com,smtp.intra.comp.com
--cg M1140-M1145,peter@comp.com,M1146-M1150,sara@comp.com
--M1142 lena@comp.com,per@comp.com
--S0120 chris@ourcompany.com
--so 0
+The hdbuserstore key
+-k T1KEY
+
+The .zip file is located in the same directory 
+as hanachecker.py
+-zf SQLStatements.zip
+
+Will run the normal mini-checks and the 
+security mini-checks
+-ct M,S
+
+Recievers will only get one email per execution
+-oe true
+
+Recievers will always get one email per execution 
+(even if their checks were not critical)
+-as true
+
+Chris is responsible for HANA revisions and for 
+that everything is up running at "OurCompany, OC" 
+-cg M0001-M0199,chris@oc.com
+
+Lena is responsible for the Operating System
+-cg M0200-M0299,lena@oc.com 
+
+Ole is responsible for the Disk
+-cg M0300-M0399,ole@oc.com
+
+Emma is the Memory expert
+-cg M0400-M0499,emma@oc.com
+
+Per is responsible for the Tables
+-cg M0500-M0599,per@oc.com
+
+Cindy is responsible for Traces, Dumps and Logs
+-cg M0600-M0699,cindy@oc.com
+
+Clark makes sure that the Statistics Server, 
+and Transaction and Threads run smoothly
+-cg M0700-M0899,clark@oc.com
+
+Loren is the Backup expert
+-cg M0900-M0999,loren@oc.com
+
+Tom checks that all Locks and SQLs are OK
+-cg M1000-M1199,tom@oc.com
+
+Jen takes care of the Applications
+-cg M1200-M1299,jen@oc.com
+
+Tim is Security responsible
+-cg M1300-M1399,tim@oc.com
+
+Mark handles the Network
+-cg M1500-M1599,mark@oc.com
+
+John checks the XS Engine, and Nameserver
+-cg M1600-M1799,john@oc.com
+
+Michael is responsible for the System Replication 
+-cg M1800-M1899,michael@oc.com
+
+Ann checks Objects, BW and Consistency
+-cg M1900-M2199,ann@oc.com
+
+Oscar handles SDA/SDI
+-cg M2200-M2299,oscar@oc.com
+
+Administration is Chris' task, 
+and he also gets the rest
+-cg M2300-M3000,chris@oc.com
+
+Tim is responsible for Security, so he checks 
+everything from the Security Minichecks
+-cg S0001-S2000,tim@oc.com
+
+Gustav is the boss, so he wants to 
+see ALL Crital Checks
+-ca gustav@oc.com
 
 
 

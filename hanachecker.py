@@ -423,7 +423,7 @@ def getFileVersion(base_file_name, tmp_sql_dir, version, revision):
     for file_name in files:
         file_revision_number_str = get_file_revision_number_str(file_name, base_file_name, tmp_sql_dir)
         choosen_file_revision_number_str = get_file_revision_number_str(chosen_file_name, base_file_name, tmp_sql_dir)
-        if int(file_revision_number_str) <= int(revision_number_str) and int(file_revision_number_str) < int(choosen_file_revision_number_str):
+        if int(file_revision_number_str) <= int(revision_number_str) and int(file_revision_number_str) > int(choosen_file_revision_number_str):
             chosen_file_name = file_name
     return chosen_file_name
 
@@ -665,7 +665,7 @@ def addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks_for_
                     checkEmailDict[checkType][checkNumber] = catch_all_emails  
     return checkEmailDict
     
-def sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, one_email, always_send, execution_string, logman):
+def sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, one_email, always_send, check_files, execution_string, logman):
     critical_mini_checks = critical_checks[0]
     critical_parameter_checks = critical_checks[1]
     sqls_with_recommendation = critical_checks[2]
@@ -680,7 +680,9 @@ def sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, on
                 for email in emails:
                     if email not in unique_emails:
                         unique_emails.append(email)
-        always_send_message = "HANAChecker was executed "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" on "+dbstring+logman.SID+" with \n"+execution_string+"\nIf any of the mini and/or parameter checks that you are responsible for seem critical, you will be notified now.\n"
+        always_send_message = "HANAChecker was executed "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" on "+dbstring+logman.SID+" with \n"+execution_string+"\nIf any of the mini and/or parameter checks from following check files:"
+        always_send_message += ",".join(check_files)
+        always_send_message += "\nthat you are responsible for seem critical, you will be notified now.\n"
         for email in unique_emails:
             messages.update({email:[always_send_message]})
         for email in parameter_emails:
@@ -1093,7 +1095,7 @@ def main():
                 ##### GET CRITICAL MINICHECKS FROM ALL MINI-CHECK FILES (either from -ct or -mf) ############
                 critical_checks = getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, logman)
                 ##### SEND EMAILS FOR ALL CRITICAL MINI-CHECKS THAT HAVE A CORRESPONDING EMAIL ADDRESS ######
-                sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, one_email, always_send, execution_string, logman)
+                sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, one_email, always_send, check_files, execution_string, logman)
                 ########### IF MINICHECK FILES FROM -ct WE HAVE TO CLEAN UP ################
                 if check_types:
                     check_files = []           

@@ -934,9 +934,10 @@ def main():
     ### email_client, -en
     if email_client:  # allow to be empty --> no emails are sent --> HANAChecker just used to write critical mini-checks in the log file, with e.g. -ca dummy@dum.com
         if email_client not in ['mailx', 'mail', 'mutt']:
-            print "INPUT ERROR: The -en flag does not specify any of the email clients mailx, mail, or mutt. If you are using an email client that can send emails with the command "
-            print '             <message> | <client> -s "<subject>" \n please let me know.'
-            os._exit(1)
+            print "INPUT WARNING: The -en flag does not specify any of the email clients mailx, mail, or mutt. If you are using an email client that can send emails with the command "
+            print '               <message> | <client> -s "<subject>" \n please let me know.'
+            print '               For backward compatibility, anything can be given for the -en flag, it will then simply be ignored, and mailx and configured send mail and mail server will be assumed.'
+            #os._exit(1)
     emailSender = None
     if email_client:
         emailSender = EmailSender(email_client, '', '')   #Default we assume -ens and -enm are left empty as default, then configured sender email and server are used

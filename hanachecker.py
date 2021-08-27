@@ -937,6 +937,7 @@ def main():
             print "INPUT WARNING: The -en flag does not specify any of the email clients mailx, mail, or mutt. If you are using an email client that can send emails with the command "
             print '               <message> | <client> -s "<subject>" \n please let me know.'
             print '               For backward compatibility, anything can be given for the -en flag, it will then simply be ignored, and mailx and configured send mail and mail server will be assumed.'
+            email_client = 'mailx'
             #os._exit(1)
     emailSender = None
     if email_client:

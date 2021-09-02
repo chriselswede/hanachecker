@@ -45,12 +45,14 @@ def printHelp():
     print(" -ct     check types, specifies what types of mini-checks to executes (must be used together with -zf), default '' (not used)                       ")
     print("         Example:  -ct M,I,S,T,P,C,R,A (in this example all possible mini-check types; mini, internal, security, trace, parameter, call stacks,     ")
     print("                                        SQL recommendations, and ABAP would be executed)                                                            ")
-    print(" -ff     flag file, full path to a file that contains input flags, each flag in a new line, all lines in the file that does not start with a        ")
-    print("         flag are considered comments,                                                      default: '' (not used)                                  ")
+    print(" -ff     flag file(s), a comma seperated list of full paths to files that contain input flags, each flag in a new line, all lines in the file that  ")
+    print("         do not start with a flag (a minus) are considered comments,                                                    default: '' (not used)      ")
     print("         *** OUTPUT ***                                                                                                                             ")
     print(" -od     output directory, full path of the folder where the log files will end up (if not exist it will be created),                               ")
     print("         default: '/tmp/hanachecker_output'                                                                                                         ")
     print(" -so     standard out switch, 1: write to std out, 0: do not write to std out, default:  1                                                          ")
+    print(" -oc     output configuration [true/false], logs, in the emails send out if -as is set, all parameters set by the flags and where the flags were    ")
+    print("         set, i.e. what flag file(one of the files listed in -ff) or if it was set via a flag specified on the command line, default = false        ")
     print("         *** EMAIL ***                                                                                                                              ")
     print(" -en     email client, for example mail, mailx, mutt, ...,                                       default: mailx                                     ")
     print("         NOTE: If you want to use HANAChecker just to write log files, without sending emails, then specify this flag empty, -en '', and provide a  ")
@@ -343,9 +345,34 @@ def get_check_number(checkString):
         
 def checkIfAcceptedFlag(word):
     if not is_check_id(word.strip('-')):
-        if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-is", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-ct", "-ff", "-od", "-so", "-en", "-ens", "-enm", "-hci", "-ssl", "-k", "-dbs"]:
+        if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-is", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-ct", "-ff", "-od", "-so", "-oc", "-en", "-ens", "-enm", "-hci", "-ssl", "-k", "-dbs"]:
             print "INPUT ERROR: ", word, " is not one of the accepted input flags. Please see --help for more information."
             os._exit(1)
+
+def getParameterFromFile(flag, flag_string, flag_value, flag_file, flag_log, parameter):
+    if flag == flag_string:
+        parameter = flag_value
+        flag_log[flag_string] = [flag_value, flag_file]
+    return parameter
+
+def getParameterListFromFile(flag, flag_string, flag_value, flag_file, flag_log, parameter, delimeter = ','):
+    if flag == flag_string:
+        parameter = [x for x in flag_value.split(delimeter)]
+        flag_log[flag_string] = [flag_value, flag_file]
+    return parameter
+
+def getParameterFromCommandLine(sysargv, flag_string, flag_log, parameter):
+    if flag_string in sysargv:
+        flag_value = sysargv[sysargv.index(flag_string) + 1]
+        parameter = flag_value
+        flag_log[flag_string] = [flag_value, "command line"]
+    return parameter
+
+def getParameterListFromCommandLine(sysargv, flag_string, flag_log, parameter, delimeter = ','):
+    if flag_string in sysargv:
+        parameter = [x for x in sysargv[  sysargv.index(flag_string) + 1   ].split(delimeter)]
+        flag_log[flag_string] = [','.join(parameter), "command line"]
+    return parameter
 
 def log(message, logman, file_name = "", recieversEmail = ""):
     logMessage = '"'+message+'"' 
@@ -665,12 +692,19 @@ def addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks_for_
                     checkEmailDict[checkType][checkNumber] = catch_all_emails  
     return checkEmailDict
     
-def sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, one_email, always_send, check_files, execution_string, logman):
+def sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, one_email, always_send, check_files, execution_string, out_config, flag_log, logman):
     critical_mini_checks = critical_checks[0]
     critical_parameter_checks = critical_checks[1]
     sqls_with_recommendation = critical_checks[2]
     messages = {}
     dbstring = ""
+    parameter_string = " "
+    if out_config:
+        parameter_string = " with"
+        for key, value in flag_log.items():
+            parameter_string += "\n"+key
+            for i in range(0, len(value), 2):
+                parameter_string += "\t"+value[i]+" from "+value[i+1]
     if len(logman.db) > 1:
         dbstring = logman.db+'@' 
     if always_send:
@@ -680,7 +714,7 @@ def sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, on
                 for email in emails:
                     if email not in unique_emails:
                         unique_emails.append(email)
-        always_send_message = "HANAChecker was executed "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+" on "+dbstring+logman.SID+" with \n"+execution_string+"\nIf any of the mini and/or parameter checks from following check files:"
+        always_send_message = "HANAChecker was executed "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+parameter_string+" on "+dbstring+logman.SID+" with \n"+execution_string+"\nIf any of the mini and/or parameter checks from following check files:"
         always_send_message += ",".join(check_files)
         always_send_message += "\nthat you are responsible for seem critical, you will be notified now.\n"
         for email in unique_emails:
@@ -748,8 +782,9 @@ def main():
                                #     USER: SYSTEM
     dbases = ['']
     std_out = "1" #print to std out
+    out_config = "false"
     out_dir = "/tmp/hanachecker_output"
-    flag_file = ""    #default: no configuration input file
+    flag_files = []     #default: no configuration input file
     check_files = None
     zip_file = None
     check_types = None
@@ -777,6 +812,7 @@ def main():
                 os._exit(1)    
     
     #####################   PRIMARY INPUT ARGUMENTS   ####################
+    flag_log = {}
     for word in sys.argv:
         if word[0:1] == '-':
             checkIfAcceptedFlag(word)     
@@ -784,135 +820,93 @@ def main():
         printHelp() 
     if '-d' in sys.argv or '--disclaimer' in sys.argv:
         printDisclaimer() 
-    if '-ff' in sys.argv:
-        flag_file = sys.argv[sys.argv.index('-ff') + 1]
+    flag_files = getParameterListFromCommandLine(sys.argv, '-ff', flag_log, flag_files)
      
     ############ CONFIGURATION FILE ###################
-    if flag_file:
+    for flag_file in flag_files:
         with open(flag_file, 'r') as fin:
-            check_groups = []
+            check_groups = [] # only one config file can define -cg
+            flag_log.pop('-cg', None)
             for line in fin:
                 firstWord = line.strip(' ').split(' ')[0]  
                 if firstWord[0:1] == '-':
                     checkIfAcceptedFlag(firstWord)
                     flagValue = line.strip(' ').split('"')[1].strip('\n').strip('\r') if line.strip(' ').split(' ')[1][0] == '"' else line.strip(' ').split(' ')[1].strip('\n').strip('\r')
-                    if firstWord == '-en': 
-                        email_client = flagValue 
-                    if firstWord == '-ens': 
-                        email_sender_address = flagValue 
-                    if firstWord == '-enm':
-                        mail_server = flagValue 
-                    if firstWord == '-hci':
-                        hanachecker_interval = flagValue
-                    if firstWord == '-is': 
-                        ignore_check_why_set = flagValue
-                    if firstWord == '-at': 
-                        active_threads = flagValue 
-                    if firstWord == '-abs': 
-                        abap_schema = flagValue 
-                    if firstWord == '-ip': 
-                        ignore_dublicated_parameter = flagValue   
-                    if firstWord == '-oe': 
-                        one_email = flagValue
-                    if firstWord == '-as': 
-                        always_send = flagValue
-                    if firstWord == '-ssl': 
-                        ssl = flagValue
-                    if firstWord == '-vlh':
-                        virtual_local_host = flagValue
-                    if firstWord == '-k':
-                        dbuserkeys = [x for x in flagValue.split(',')]
-                    if firstWord == '-so': 
-                        std_out = flagValue
-                    if firstWord == '-od': 
-                        out_dir = flagValue
-                    if firstWord == '-mf': 
-                        check_files = [x for x in flagValue.split(',')]
-                    if firstWord == '-zf': 
-                        zip_file = flagValue
-                    if firstWord == '-ct': 
-                        check_types = [x for x in flagValue.split(',')]
+                    email_client                        = getParameterFromFile(firstWord, '-en', flagValue, flag_file, flag_log, email_client)
+                    email_sender_address                = getParameterFromFile(firstWord, '-ens', flagValue, flag_file, flag_log, email_sender_address)
+                    mail_server                         = getParameterFromFile(firstWord, '-enm', flagValue, flag_file, flag_log, mail_server)
+                    hanachecker_interval                = getParameterFromFile(firstWord, '-hci', flagValue, flag_file, flag_log, hanachecker_interval)
+                    ignore_check_why_set                = getParameterFromFile(firstWord, '-is', flagValue, flag_file, flag_log, ignore_check_why_set)
+                    active_threads                      = getParameterFromFile(firstWord, '-at', flagValue, flag_file, flag_log, active_threads)
+                    abap_schema                         = getParameterFromFile(firstWord, '-abs', flagValue, flag_file, flag_log, abap_schema)
+                    ignore_dublicated_parameter         = getParameterFromFile(firstWord, '-ip', flagValue, flag_file, flag_log, ignore_dublicated_parameter)
+                    one_email                           = getParameterFromFile(firstWord, '-oe', flagValue, flag_file, flag_log, one_email)
+                    always_send                         = getParameterFromFile(firstWord, '-as', flagValue, flag_file, flag_log, always_send)
+                    ssl                                 = getParameterFromFile(firstWord, '-ssl', flagValue, flag_file, flag_log, ssl)
+                    virtual_local_host                  = getParameterFromFile(firstWord, '-vlh', flagValue, flag_file, flag_log, virtual_local_host)
+                    dbuserkeys                          = getParameterListFromFile(firstWord, '-k', flagValue, flag_file, flag_log, dbuserkeys)
+                    std_out                             = getParameterFromFile(firstWord, '-so', flagValue, flag_file, flag_log, std_out)
+                    out_config                          = getParameterFromFile(firstWord, '-oc', flagValue, flag_file, flag_log, out_config)
+                    out_dir                             = getParameterFromFile(firstWord, '-od', flagValue, flag_file, flag_log, out_dir)
+                    check_files                         = getParameterListFromFile(firstWord, '-mf', flagValue, flag_file, flag_log, check_files)
+                    zip_file                            = getParameterFromFile(firstWord, '-zf', flagValue, flag_file, flag_log, zip_file)
+                    check_types                         = getParameterListFromFile(firstWord, '-ct', flagValue, flag_file, flag_log, check_types)
                     for checkFlagType in ['M', 'I', 'S', 'T', 'C', 'A']: #mini, internal, security, trace, call stack, ABAP
                         for checkFlagNumber in range(1, chidMax):
                             checkId = convertToCheckId(checkFlagType, checkFlagNumber)
                             if firstWord == '-'+checkId:
                                 checkEmailDict[checkFlagType][checkFlagNumber] = [x for x in flagValue.split(',')]
+                                flag_log['-'+checkId] = [flag_value, flag_file]
                     if firstWord == '-cg': 
                         check_groups += [x for x in flagValue.split(',')]
-                    if firstWord == '-pe': 
-                        parameter_emails = [x for x in flagValue.split(',')]
-                    if firstWord == '-se': 
-                        sql_emails = [x for x in flagValue.split(',')]
-                    if firstWord == '-ee': 
-                        error_emails = [x for x in flagValue.split(',')]
-                    if firstWord == '-ca': 
-                        catch_all_emails = [x for x in flagValue.split(',')]
-                    if firstWord == '-ic': 
-                        ignore_checks_for_ca = [x for x in flagValue.split(',')]
-                    if firstWord == '-il': 
-                        ignore_checks = [x for x in flagValue.split(',')]
-                    if firstWord == '-dbs':
-                        dbases = [x for x in flagValue.split(',')]
+                        if '-cg' in flag_log:
+                            flag_log['-cg'].append(flagValue)
+                            flag_log['-cg'].append(flag_file)
+                        else:
+                            flag_log['-cg'] = [flagValue, flag_file]
+                    parameter_emails                    = getParameterListFromFile(firstWord, '-pe', flagValue, flag_file, flag_log, parameter_emails)
+                    sql_emails                          = getParameterListFromFile(firstWord, '-se', flagValue, flag_file, flag_log, sql_emails)
+                    error_emails                        = getParameterListFromFile(firstWord, '-ee', flagValue, flag_file, flag_log, error_emails)
+                    catch_all_emails                    = getParameterListFromFile(firstWord, '-ca', flagValue, flag_file, flag_log, catch_all_emails)
+                    ignore_checks_for_ca                = getParameterListFromFile(firstWord, '-ic', flagValue, flag_file, flag_log, ignore_checks_for_ca)
+                    ignore_checks                       = getParameterListFromFile(firstWord, '-il', flagValue, flag_file, flag_log, ignore_checks)
+                    dbases                              = getParameterListFromFile(firstWord, '-dbs', flagValue, flag_file, flag_log, dbases)
      
     #####################   INPUT ARGUMENTS (these would overwrite whats in the configuration file)  #################### 
-    if '-en' in sys.argv:
-        email_client = sys.argv[sys.argv.index('-en') + 1]
-    if '-ens' in sys.argv:
-        email_sender_address = sys.argv[sys.argv.index('-ens') + 1]
-    if '-enm' in sys.argv:
-        mail_server = sys.argv[sys.argv.index('-enm') + 1]
-    if '-hci' in sys.argv:
-        hanachecker_interval = sys.argv[sys.argv.index('-hci') + 1]
-    if '-is' in sys.argv:
-        ignore_check_why_set = sys.argv[sys.argv.index('-is') + 1]
-    if '-at' in sys.argv:
-        active_threads = sys.argv[sys.argv.index('-at') + 1]
-    if '-abs' in sys.argv:
-        abap_schema = sys.argv[sys.argv.index('-abs') + 1]
-    if '-ip' in sys.argv:
-        ignore_dublicated_parameter = sys.argv[sys.argv.index('-ip') + 1]        
-    if '-oe' in sys.argv:
-        one_email = sys.argv[sys.argv.index('-oe') + 1]
-    if '-as' in sys.argv:
-        always_send = sys.argv[sys.argv.index('-as') + 1]
-    if '-ssl' in sys.argv:
-        ssl = sys.argv[sys.argv.index('-ssl') + 1]
-    if '-vlh' in sys.argv:
-        virtual_local_host = sys.argv[sys.argv.index('-vlh') + 1]
-    if '-k' in sys.argv:
-        dbuserkeys = [x for x in sys.argv[  sys.argv.index('-k') + 1   ].split(',')]
-    if '-so' in sys.argv:
-        std_out = int(sys.argv[sys.argv.index('-so') + 1])
-    if '-od' in sys.argv:
-        out_dir = sys.argv[sys.argv.index('-od') + 1]
-    if '-mf' in sys.argv:
-        check_files = [x for x in sys.argv[  sys.argv.index('-mf') + 1   ].split(',')]
-    if '-zf' in sys.argv:
-        zip_file = sys.argv[sys.argv.index('-zf') + 1]
-    if '-ct' in sys.argv:
-        check_types = [x for x in sys.argv[  sys.argv.index('-ct') + 1   ].split(',')]
+    email_client                        = getParameterFromCommandLine(sys.argv, '-en', flag_log, email_client)
+    email_sender_address                = getParameterFromCommandLine(sys.argv, '-ens', flag_log, email_sender_address)
+    mail_server                         = getParameterFromCommandLine(sys.argv, '-enm', flag_log, mail_server)
+    hanachecker_interval                = getParameterFromCommandLine(sys.argv, '-hci', flag_log, hanachecker_interval)
+    ignore_check_why_set                = getParameterFromCommandLine(sys.argv, '-is', flag_log, ignore_check_why_set)
+    active_threads                      = getParameterFromCommandLine(sys.argv, '-at', flag_log, active_threads)
+    abap_schema                         = getParameterFromCommandLine(sys.argv, '-abs', flag_log, abap_schema)
+    ignore_dublicated_parameter         = getParameterFromCommandLine(sys.argv, '-ip', flag_log, ignore_dublicated_parameter)
+    one_email                           = getParameterFromCommandLine(sys.argv, '-oe', flag_log, one_email)
+    always_send                         = getParameterFromCommandLine(sys.argv, '-as', flag_log, always_send)
+    ssl                                 = getParameterFromCommandLine(sys.argv, '-ssl', flag_log, ssl)
+    virtual_local_host                  = getParameterFromCommandLine(sys.argv, '-vlh', flag_log, virtual_local_host)
+    dbuserkeys                          = getParameterListFromCommandLine(sys.argv, '-k', flag_log, dbuserkeys)
+    std_out                             = getParameterFromCommandLine(sys.argv, '-so', flag_log, std_out)
+    out_config                          = getParameterFromCommandLine(sys.argv, '-oc', flag_log, out_config)
+    out_dir                             = getParameterFromCommandLine(sys.argv, '-od', flag_log, out_dir)
+    check_files                         = getParameterListFromCommandLine(sys.argv, '-mf', flag_log, check_files)
+    zip_file                            = getParameterFromCommandLine(sys.argv, '-zf', flag_log, zip_file)
+    check_types                         = getParameterListFromCommandLine(sys.argv, '-ct', flag_log, check_types)
     for checkFlagType in ['M', 'I', 'S', 'T', 'C', 'A']: #mini, internal, security, trace, call stacks, ABAP
         for checkFlagNumber in range(1, chidMax):
             checkId = convertToCheckId(checkFlagType, checkFlagNumber)
             if '-'+checkId in sys.argv:
-                checkEmailDict[checkFlagType][checkFlagNumber] = [x for x in sys.argv[  sys.argv.index('-'+checkId) + 1   ].split(',')] 
-    if '-cg' in sys.argv:
-        check_groups = [x for x in sys.argv[  sys.argv.index('-cg') + 1   ].split(',')]
-    if '-pe' in sys.argv:
-        parameter_emails = [x for x in sys.argv[  sys.argv.index('-pe') + 1   ].split(',')]
-    if '-se' in sys.argv:
-        sql_emails = [x for x in sys.argv[  sys.argv.index('-se') + 1   ].split(',')]
-    if '-ee' in sys.argv:
-        error_emails = [x for x in sys.argv[  sys.argv.index('-ee') + 1   ].split(',')]
-    if '-ca' in sys.argv:
-        catch_all_emails = [x for x in sys.argv[  sys.argv.index('-ca') + 1   ].split(',')]
-    if '-ic' in sys.argv:
-        ignore_checks_for_ca = [x for x in sys.argv[  sys.argv.index('-ic') + 1   ].split(',')]
-    if '-il' in sys.argv:
-        ignore_checks = [x for x in sys.argv[  sys.argv.index('-il') + 1   ].split(',')]
-    if '-dbs' in sys.argv:
-        dbases = [x for x in sys.argv[  sys.argv.index('-dbs') + 1   ].split(',')]
-            
+                checkEmailDict[checkFlagType][checkFlagNumber] = [x for x in sys.argv[  sys.argv.index('-'+checkId) + 1   ].split(',')]
+                flag_log['-'+checkId] = [flag_value, flag_file]
+    check_groups                        = getParameterListFromCommandLine(sys.argv, '-cg', flag_log, check_groups)
+    parameter_emails                    = getParameterListFromCommandLine(sys.argv, '-pe', flag_log, parameter_emails)
+    sql_emails                          = getParameterListFromCommandLine(sys.argv, '-se', flag_log, sql_emails)
+    error_emails                        = getParameterListFromCommandLine(sys.argv, '-ee', flag_log, error_emails)
+    catch_all_emails                    = getParameterListFromCommandLine(sys.argv, '-ca', flag_log, catch_all_emails)
+    ignore_checks_for_ca                = getParameterListFromCommandLine(sys.argv, '-ic', flag_log, ignore_checks_for_ca)
+    ignore_checks                       = getParameterListFromCommandLine(sys.argv, '-il', flag_log, ignore_checks)
+    dbases                              = getParameterListFromCommandLine(sys.argv, '-dbs', flag_log, dbases)
+
     ##### SYSTEM ID #############        
     SID = subprocess.check_output('whoami', shell=True).replace('\n','').replace('adm','').upper()
               
@@ -931,6 +925,8 @@ def main():
         log("INPUT ERROR: -so must be an integer. Please see --help for more information.", logman)
         os._exit(1)
     std_out = int(std_out) 
+    ### out_config, -oc
+    out_config = checkAndConvertBooleanFlag(out_config, "-oc")
     ### email_client, -en
     if email_client:  # allow to be empty --> no emails are sent --> HANAChecker just used to write critical mini-checks in the log file, with e.g. -ca dummy@dum.com
         if email_client not in ['mailx', 'mail', 'mutt']:
@@ -1097,7 +1093,7 @@ def main():
                 ##### GET CRITICAL MINICHECKS FROM ALL MINI-CHECK FILES (either from -ct or -mf) ############
                 critical_checks = getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, logman)
                 ##### SEND EMAILS FOR ALL CRITICAL MINI-CHECKS THAT HAVE A CORRESPONDING EMAIL ADDRESS ######
-                sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, one_email, always_send, check_files, execution_string, logman)
+                sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, one_email, always_send, check_files, execution_string, out_config, flag_log, logman)
                 ########### IF MINICHECK FILES FROM -ct WE HAVE TO CLEAN UP ################
                 if check_types:
                     check_files = []           

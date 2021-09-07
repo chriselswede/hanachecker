@@ -54,13 +54,14 @@ def printHelp():
     print(" -oc     output configuration [true/false], logs, in the emails send out if -as is set, all parameters set by the flags and where the flags were    ")
     print("         set, i.e. what flag file(one of the files listed in -ff) or if it was set via a flag specified on the command line, default = false        ")
     print("         *** EMAIL ***                                                                                                                              ")
-    print(" -en     email client, for example mail, mailx, mutt, ...,                                       default: mailx                                     ")
-    print("         NOTE: If you want to use HANAChecker just to write log files, without sending emails, then specify this flag empty, -en '', and provide a  ")
+    print(" -enc    email client, for example mail, mailx, mutt, ...,                                       default: mailx                                     ")
+    print("         NOTE: If you want to use HANAChecker just to write log files, without sending emails, then specify this flag empty, -enc '', and provide a ")
     print("               dummy email address for the -ca flag  to write to file all potential critical mini-checks                                            ")
     print('         NOTE: For e.g. mailx to work you have to install the linux program "sendmail" and add something like DSsmtp.intra.ourcompany.com in the    ')
     print("               file sendmail.cf in /etc/mail/, see https://www.systutorials.com/5167/sending-email-using-mailx-in-linux-through-internal-smtp/      ")
-    print(" -ens    sender's email, to explicit specify sender's email address, this might not be needed,   default:    (configured sender's email used)       ")
-    print(" -enm    mail server, to explicit specify mail server, this might not be needed,                 default:    (configured mail server used)          ")
+    print(" -ens    sender's email, to explicitly specify sender's email address, this might not be needed,   default:    (configured sender's email used)     ")
+    print(" -enm    mail server, to explicitly specify mail server, this might not be needed,                 default:    (configured mail server used)        ")
+    print(" -en     depricated! email notification, <sender's email>,<mail server>   example: me@ourcompany.com,smtp.intra.ourcompany.com    Don't use!        ")
     print("         *** ADMIN ***                                                                                                                              ")
     print(" -hci    hana checker interval [days], number days that HANA Checker waits before it checks again, default: -1 (exits after 1 cycle)                ")
     print("         NOTE: Do NOT use if you run hanachecker in a cron job!                                                                                     ")
@@ -345,7 +346,7 @@ def get_check_number(checkString):
         
 def checkIfAcceptedFlag(word):
     if not is_check_id(word.strip('-')):
-        if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-is", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-ct", "-ff", "-od", "-so", "-oc", "-en", "-ens", "-enm", "-hci", "-ssl", "-k", "-dbs"]:
+        if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-is", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-ct", "-ff", "-od", "-so", "-oc", "-enc", "-ens", "-enm", "-en", "-hci", "-ssl", "-k", "-dbs"]:
             print "INPUT ERROR: ", word, " is not one of the accepted input flags. Please see --help for more information."
             os._exit(1)
 
@@ -387,15 +388,13 @@ def log(message, logman, file_name = "", recieversEmail = ""):
     logfile.flush()
     logfile.close()
     if recieversEmail:
-        if logman.emailSender:   #if -en was specified as empty, then emailSender is None, so no emails will be send
-            #MAILX (https://www.systutorials.com/5167/sending-email-using-mailx-in-linux-through-internal-smtp/):
-            mailstring = 'echo "'+message.replace('"','')+'" | mailx -s "HANAChecker: Potential Critical Situation(s) '+logman.db+"@"+logman.SID+'!" '
+        if logman.emailSender:   #if -enc was specified as empty, then emailSender is None, so no emails will be send
+            mailstring = 'echo "'+message.replace('"','')+'" | '+logman.emailSender.emailClient+' -s "HANAChecker: Potential Critical Situation(s) '+logman.db+"@"+logman.SID+'!" '
             if logman.emailSender.mailServer:
                 mailstring += ' -S smtp=smtp://'+logman.emailSender.mailServer+' '
             if logman.emailSender.senderEmail:
                 mailstring += ' -S from="'+logman.emailSender.senderEmail+'" '
             mailstring += recieversEmail
-            #print mailstring
             subprocess.check_output(mailstring, shell=True)
 
 def log_with_emails(message, logman, error_emails):
@@ -766,6 +765,7 @@ def main():
     email_client = 'mailx'   #default email client
     email_sender_address = ''
     mail_server = ''
+    email_sender = []    #depricated!
     hanachecker_interval = -1
     ignore_check_why_set = "false"
     active_threads = ''
@@ -832,9 +832,10 @@ def main():
                 if firstWord[0:1] == '-':
                     checkIfAcceptedFlag(firstWord)
                     flagValue = line.strip(' ').split('"')[1].strip('\n').strip('\r') if line.strip(' ').split(' ')[1][0] == '"' else line.strip(' ').split(' ')[1].strip('\n').strip('\r')
-                    email_client                        = getParameterFromFile(firstWord, '-en', flagValue, flag_file, flag_log, email_client)
+                    email_client                        = getParameterFromFile(firstWord, '-enc', flagValue, flag_file, flag_log, email_client)
                     email_sender_address                = getParameterFromFile(firstWord, '-ens', flagValue, flag_file, flag_log, email_sender_address)
                     mail_server                         = getParameterFromFile(firstWord, '-enm', flagValue, flag_file, flag_log, mail_server)
+                    email_sender                        = getParameterListFromFile(firstWord, '-en', flagValue, flag_file, flag_log, email_sender)  #depricated
                     hanachecker_interval                = getParameterFromFile(firstWord, '-hci', flagValue, flag_file, flag_log, hanachecker_interval)
                     ignore_check_why_set                = getParameterFromFile(firstWord, '-is', flagValue, flag_file, flag_log, ignore_check_why_set)
                     active_threads                      = getParameterFromFile(firstWord, '-at', flagValue, flag_file, flag_log, active_threads)
@@ -873,9 +874,10 @@ def main():
                     dbases                              = getParameterListFromFile(firstWord, '-dbs', flagValue, flag_file, flag_log, dbases)
      
     #####################   INPUT ARGUMENTS (these would overwrite whats in the configuration file)  #################### 
-    email_client                        = getParameterFromCommandLine(sys.argv, '-en', flag_log, email_client)
+    email_client                        = getParameterFromCommandLine(sys.argv, '-enc', flag_log, email_client)
     email_sender_address                = getParameterFromCommandLine(sys.argv, '-ens', flag_log, email_sender_address)
     mail_server                         = getParameterFromCommandLine(sys.argv, '-enm', flag_log, mail_server)
+    email_sender                        = getParameterListFromCommandLine(sys.argv, '-en', flag_log, email_sender)   #depricated
     hanachecker_interval                = getParameterFromCommandLine(sys.argv, '-hci', flag_log, hanachecker_interval)
     ignore_check_why_set                = getParameterFromCommandLine(sys.argv, '-is', flag_log, ignore_check_why_set)
     active_threads                      = getParameterFromCommandLine(sys.argv, '-at', flag_log, active_threads)
@@ -927,14 +929,12 @@ def main():
     std_out = int(std_out) 
     ### out_config, -oc
     out_config = checkAndConvertBooleanFlag(out_config, "-oc")
-    ### email_client, -en
+    ### email_client, -enc
     if email_client:  # allow to be empty --> no emails are sent --> HANAChecker just used to write critical mini-checks in the log file, with e.g. -ca dummy@dum.com
         if email_client not in ['mailx', 'mail', 'mutt']:
-            print "INPUT WARNING: The -en flag does not specify any of the email clients mailx, mail, or mutt. If you are using an email client that can send emails with the command "
+            print "INPUT WARNING: The -enc flag does not specify any of the email clients mailx, mail, or mutt. If you are using an email client that can send emails with the command "
             print '               <message> | <client> -s "<subject>" \n please let me know.'
-            print '               For backward compatibility, anything can be given for the -en flag, it will then simply be ignored, and mailx and configured send mail and mail server will be assumed.'
-            email_client = 'mailx'
-            #os._exit(1)
+            os._exit(1)
     emailSender = None
     if email_client:
         emailSender = EmailSender(email_client, '', '')   #Default we assume -ens and -enm are left empty as default, then configured sender email and server are used
@@ -948,6 +948,16 @@ def main():
     ### mail_server, -enm
     if mail_server:
         logman.emailSender.mailServer = mail_server
+    ### email_sender (DEPRICATED!), -en
+    if email_sender:  # allow to be empty --> no emails are sent --> HANAChecker just used to write critical mini-checks in the log file
+        if not len(email_sender) == 2:
+            print "INPUT ERROR: -en requires 2 elements, seperated by a comma. Please see --help for more information."
+            os._exit(1)
+        if not is_email(email_sender[0]):
+            print "INPUT ERROR: first element of -en has to be a valid email. Please see --help for more information."
+            os._exit(1)     
+        logman.emailSender.senderEmail = email_sender[0]
+        logman.emailSender.mailServer = email_sender[1]
     ### hanachecker_interval, -hci
     if not is_integer(hanachecker_interval):
         log("INPUT ERROR: -hci must be an integer. Please see --help for more information.", logman)

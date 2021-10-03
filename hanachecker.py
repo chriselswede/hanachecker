@@ -951,10 +951,10 @@ def main():
     ### email_sender (DEPRICATED!), -en
     if email_sender:  # allow to be empty --> no emails are sent --> HANAChecker just used to write critical mini-checks in the log file
         if not len(email_sender) == 2:
-            print "INPUT ERROR: -en requires 2 elements, seperated by a comma. Please see --help for more information."
+            print "INPUT ERROR: -en requires 2 elements, seperated by a comma. Note: -en is depricated. Please see --help for more information."
             os._exit(1)
         if not is_email(email_sender[0]):
-            print "INPUT ERROR: first element of -en has to be a valid email. Please see --help for more information."
+            print "INPUT ERROR: first element of -en has to be a valid email. Note: -en is depricated. Please see --help for more information."
             os._exit(1)     
         logman.emailSender.senderEmail = email_sender[0]
         logman.emailSender.mailServer = email_sender[1]

@@ -346,7 +346,7 @@ def get_check_number(checkString):
         
 def checkIfAcceptedFlag(word):
     if not is_check_id(word.strip('-')):
-        if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-is", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-ct", "-ff", "-od", "-so", "-oc", "-enc", "-ens", "-enm", "-en", "-hci", "-ssl", "-k", "-dbs"]:
+        if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-se", "-ee", "-is", "-at", "-abs", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-ct", "-ff", "-od", "-so", "-oc", "-enc", "-ens", "-enm", "-en", "-hci", "-ssl", "-k", "-dbs"]:
             print "INPUT ERROR: ", word, " is not one of the accepted input flags. Please see --help for more information."
             os._exit(1)
 

@@ -111,7 +111,7 @@ class EmailSender:
         self.senderEmail = senderEmail
         self.mailServer = mailServer
     def printEmailSender(self):
-        print "Email Client: ", self.emailClient, "  Sender Email: ", self.senderEmail, "  Mail Server: ", self.mailServer 
+        print("Email Client: ", self.emailClient, "  Sender Email: ", self.senderEmail, "  Mail Server: ", self.mailServer) 
 
 class MiniCheck:
     def __init__(self, CHID, Area, Description, Host, Port, Count, ActiveThreads, LastOccurrence, Value, Expectation, C, SAPNote, TraceText):
@@ -158,7 +158,7 @@ class MiniCheck:
             sum += "  TraceText: "+self.TraceText
         return sum
     def printMiniCheck(self):  
-        print self.summary()
+        print(self.summary())
         
 class ParameterCheck:
     def __init__(self, IniFile, Section, Parameter, Priority, ConfiguredValue, RecommendedValue, SAPNote, ConfiguredLayer, Revision, Environment, CpuThreads, CpuFrequency, NumaNodes, GlobalAllocationLimit, SlaveNodes, LogVolumeSize):
@@ -262,6 +262,16 @@ class SQLManager:
 
 ######################## DEFINE FUNCTIONS ################################
 
+def run_command(cmd):
+    if sys.version_info[0] == 2: 
+        out = subprocess.check_output(cmd, shell=True).strip("\n")
+    elif sys.version_info[0] == 3:
+        out = subprocess.run(cmd, shell=True, capture_output=True, text=True).stdout.strip("\n")
+    else:
+        print("ERROR: Wrong Python version")
+        os._exit(1)
+    return out
+
 def is_integer(s):
     try:
         int(s)
@@ -283,18 +293,25 @@ def is_email(s):
     return '.' in s[1]
 
 def cdalias(alias):   # alias e.g. cdtrace, cdhdb, ...
-    command_run = subprocess.check_output(['/bin/bash', '-i', '-c', "alias "+alias])
-    pieces = command_run.strip("\n").strip("alias "+alias+"=").strip("'").strip("cd ").split("/")
+    #command_run = subprocess.check_output(['/bin/bash', '-i', '-c', "alias "+alias])
+    process = subprocess.Popen(['/bin/bash', '-i', '-c', "alias "+alias], stdout=subprocess.PIPE)
+    out, err = process.communicate()
+    out = out.decode()
+    pieces = out.strip("\n").strip("alias "+alias+"=").strip("'").strip("cd ").split("/")
     path = ''
     for piece in pieces:
         if piece[0] == '$':
-            piece = (subprocess.check_output(['/bin/bash', '-i', '-c', "echo "+piece])).strip("\n")
+            #piece = (subprocess.check_output(['/bin/bash', '-i', '-c', "echo "+piece])).strip("\n")
+            process = subprocess.Popen(['/bin/bash', '-i', '-c', "echo "+piece], stdout=subprocess.PIPE)
+            out, err = process.communicate()
+            out = out.decode().strip("\n")
         path = path + '/' + piece + '/' 
     return path       
         
 def checkUserKey(dbuserkey, virtual_local_host, logman, error_emails):
     try: 
-        key_environment = subprocess.check_output('''hdbuserstore LIST '''+dbuserkey, shell=True) 
+        #key_environment = subprocess.check_output('''hdbuserstore LIST '''+dbuserkey, shell=True) 
+        key_environment = run_command('''hdbuserstore LIST '''+dbuserkey)
         if "NOT FOUND" in key_environment:
             message = "ERROR, the key "+dbuserkey+" is not maintained in hdbuserstore."
             log_with_emails(message, logman, error_emails)
@@ -303,7 +320,8 @@ def checkUserKey(dbuserkey, virtual_local_host, logman, error_emails):
         message = "ERROR, the key "+dbuserkey+" is not maintained in hdbuserstore."
         log_with_emails(message, logman, error_emails)
         os._exit(1)
-    local_host = subprocess.check_output("hostname", shell=True).replace('\n','') if virtual_local_host == "" else virtual_local_host
+    #local_host = subprocess.check_output("hostname", shell=True).replace('\n','') if virtual_local_host == "" else virtual_local_host
+    local_host = run_command("hostname").replace('\n','') if virtual_local_host == "" else virtual_local_host
     ENV = key_environment.split('\n')[1].replace('  ENV : ','').split(',')
     #key_hosts = [env.split(':')[0] for env in ENV]
     key_hosts = [env.split(':')[0].split('.')[0] for env in ENV]  #if full host name is specified in the Key, only the first part is used
@@ -315,7 +333,7 @@ def checkUserKey(dbuserkey, virtual_local_host, logman, error_emails):
 def checkAndConvertBooleanFlag(boolean, flagstring):     
     boolean = boolean.lower()
     if boolean not in ("false", "true"):
-        print "INPUT ERROR: ", flagstring, " must be either 'true' or 'false'. Please see --help for more information."
+        print("INPUT ERROR: ", flagstring, " must be either 'true' or 'false'. Please see --help for more information.")
         os._exit(1)
     boolean = True if boolean == "true" else False
     return boolean
@@ -334,20 +352,20 @@ def is_check_id(checkString):
     
 def get_check_type(checkString):
     if not is_check_id(checkString):
-        print "ERROR: checkString, "+checkString+", in get_check_type is not a check ID"
+        print("ERROR: checkString, "+checkString+", in get_check_type is not a check ID")
         os._exit(1)
     return checkString[0]
     
 def get_check_number(checkString):
     if not is_check_id(checkString):
-        print "ERROR: checkString in get_check_numer is not a check ID"
+        print("ERROR: checkString in get_check_numer is not a check ID")
         os._exit(1)
     return int(checkString[1:5].lstrip('0'))
         
 def checkIfAcceptedFlag(word):
     if not is_check_id(word.strip('-')):
         if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-se", "-ee", "-is", "-at", "-abs", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-ct", "-ff", "-od", "-so", "-oc", "-enc", "-ens", "-enm", "-en", "-hci", "-ssl", "-k", "-dbs"]:
-            print "INPUT ERROR: ", word, " is not one of the accepted input flags. Please see --help for more information."
+            print("INPUT ERROR: ", word, " is not one of the accepted input flags. Please see --help for more information.")
             os._exit(1)
 
 def getParameterFromFile(flag, flag_string, flag_value, flag_file, flag_log, parameter):
@@ -380,7 +398,7 @@ def log(message, logman, file_name = "", recieversEmail = ""):
     if logman.emailSender:    
         logMessage += " is sent to " + recieversEmail if recieversEmail else message
     if logman.std_out:
-        print logMessage
+        print(logMessage)
     if file_name == "":
         file_name = "hanacheckerlog"
     logfile = open(logman.out_dir+"/"+file_name+"_"+datetime.now().strftime("%Y-%m-%d_%H-%M-%S"+".txt").replace(" ", "_"), "a")
@@ -395,7 +413,8 @@ def log(message, logman, file_name = "", recieversEmail = ""):
             if logman.emailSender.senderEmail:
                 mailstring += ' -S from="'+logman.emailSender.senderEmail+'" '
             mailstring += recieversEmail
-            subprocess.check_output(mailstring, shell=True)
+            #subprocess.check_output(mailstring, shell=True)
+            dummyout = run_command(mailstring)
 
 def log_with_emails(message, logman, error_emails):
     if error_emails:
@@ -405,12 +424,13 @@ def log_with_emails(message, logman, error_emails):
         log(message, logman)
 
 def hana_version_revision(sqlman):
-    command_run = subprocess.check_output(sqlman.hdbsql_jAU + " \"select value from sys.m_system_overview where name = 'Version'\"", shell=True)
+    #command_run = subprocess.check_output(sqlman.hdbsql_jAU + " \"select value from sys.m_system_overview where name = 'Version'\"", shell=True)
+    command_run = run_command(sqlman.hdbsql_jAU + " \"select value from sys.m_system_overview where name = 'Version'\"")
     hanaver = command_run.splitlines(1)[2].split('.')[0].replace('| ','')
     hanarev = command_run.splitlines(1)[2].split('.')[2]
     #hanamrev = command_run.splitlines(1)[2].split('.')[3]   #We dont need the maintenence revision
     if not is_integer(hanarev):
-        print "ERROR: something went wrong checking hana revision."
+        print("ERROR: something went wrong checking hana revision.")
         os._exit(1)
     return [int(hanaver), int(hanarev)]
 
@@ -437,13 +457,15 @@ def get_revision_number_str(version, revision):
 def getFileVersion(base_file_name, tmp_sql_dir, version, revision):
     revision_number_str = get_revision_number_str(version, revision)
     try:
-        output = subprocess.check_output('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt', shell=True, stderr=subprocess.STDOUT) #removes SHC
-    except Exception, e:
+        #output = subprocess.check_output('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt', shell=True, stderr=subprocess.STDOUT) #removes SHC
+        output = run_command('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt') #this might be a problem ... from https://docs.python.org/3/library/subprocess.html#subprocess.getoutput : 
+            #The stdout and stderr arguments may not be supplied at the same time as capture_output. If you wish to capture and combine both streams into one, use stdout=PIPE and stderr=STDOUT instead of capture_output.
+    except Exception as e:
         output = str(e.output)
     output = output.splitlines(1)
     files = [f.strip('\n') for f in output if not 'cannot access' in f]
     if len(files) == 0:
-        print "ERROR: There were no on-premise files found with name "+base_file_name+", files = ", files
+        print("ERROR: There were no on-premise files found with name "+base_file_name+", files = ", files)
         os._exit(1)
     chosen_file_name = files[0] 
     for file_name in files:
@@ -469,7 +491,7 @@ def getCheckFiles(tmp_sql_dir, check_types, version, revision, active_threads, a
         elif ct == 'C':
             revision_number_str = get_revision_number_str(version, revision)
             if int(revision_number_str) < 200040:
-                print "COMPATIBILITY ERRROR: There are no Call Stack Mini-Checks for your SAP HANA revision, so you cannot use -ct C"
+                print("COMPATIBILITY ERRROR: There are no Call Stack Mini-Checks for your SAP HANA revision, so you cannot use -ct C")
                 os._exit(1)
             if active_threads:  # then must change modification section
                 cs_mc_file = getFileVersion('HANA_Threads_Callstacks_MiniChecks', tmp_sql_dir, version, revision).strip('\n')
@@ -527,7 +549,8 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
         elif 'ABAP' in check_file:
             checkType = 'A'
         try:
-            result = subprocess.check_output(sqlman.hdbsql_jAaxU + ' -I '+check_file, shell=True).splitlines()
+            #result = subprocess.check_output(sqlman.hdbsql_jAaxU + ' -I '+check_file, shell=True).splitlines()
+            result = run_command(sqlman.hdbsql_jAaxU + ' -I '+check_file).splitlines()
         except:
             log("ERROR: The check file "+check_file+" could not be executed. Either there is a problem with the check file (did you get the latest SQLStatements.zip from SAP Note 1969700?) or there is a problem with the user (is user properly saved in hdbuserstore?) or there is another problem (OOM?).", logman)
             os._exit(1)
@@ -642,7 +665,9 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
 def ping_db(sqlman, logman, error_emails):
     with open(os.devnull, 'w') as devnull:  # just to get no stdout in case HANA is offline
         try:
-            command_run = subprocess.check_output(sqlman.hdbsql_jAaxU + ' "select * from dummy"', shell=True, stderr=devnull).splitlines(1)
+            #command_run = subprocess.check_output(sqlman.hdbsql_jAaxU + ' "select * from dummy"', shell=True, stderr=devnull).splitlines(1)
+            command_run = run_command(sqlman.hdbsql_jAaxU + ' "select * from dummy"').splitlines(1) #this might be a problem ... from https://docs.python.org/3/library/subprocess.html#subprocess.getoutput : 
+            #The stdout and stderr arguments may not be supplied at the same time as capture_output. If you wish to capture and combine both streams into one, use stdout=PIPE and stderr=STDOUT instead of capture_output.
             output = command_run[0].strip("\n").strip("|").strip(" ")
             if not output == 'X':
                 message = "CONNECTION ERROR: Something went wrong getting results from an SQL from database "+sqlman.db+" with user "+sqlman.key+".\n"
@@ -757,9 +782,12 @@ def main():
     global chidMax
     
     #####################  CHECK PYTHON VERSION ###########
-    if sys.version_info[0] != 2 or sys.version_info[1] != 7:
-        print "VERSION ERROR: hanacleaner is only supported for Python 2.7.x. Did you maybe forget to log in as <sid>adm before executing this?"
-        os._exit(1)
+    if sys.version_info[0] != 2 and sys.version_info[0] != 3:
+        if sys.version_info[1] != 7:
+            print("VERSION ERROR: hanachecker is only supported for Python 2.7.x (for HANA 2 SPS05 and lower) and for Python 3.7.x (for HANA 2 SPS06 and higher). Did you maybe forget to log in as <sid>adm before executing this?")
+            os._exit(1)
+    if sys.version_info[0] == 3:
+        print("VERSION WARNING: You are among the first using HANAChecker on Python 3. As always, use on your own risk, and please report issues to christian.hansen01@sap.com. Thank you!")
 
     #####################   DEFAULTS   ####################
     email_client = 'mailx'   #default email client
@@ -800,15 +828,15 @@ def main():
     
     #####################  CHECK INPUT ARGUMENTS #################
     if len(sys.argv) == 1:
-        print "INPUT ERROR: hanachecker needs input arguments. Please see --help for more information."
+        print("INPUT ERROR: hanachecker needs input arguments. Please see --help for more information.")
         os._exit(1) 
     if len(sys.argv) != 2 and len(sys.argv) % 2 == 0:
-        print "INPUT ERROR: Wrong number of input arguments. Please see --help for more information."
+        print("INPUT ERROR: Wrong number of input arguments. Please see --help for more information.")
         os._exit(1)
     for i in range(len(sys.argv)):
         if i % 2 != 0:
             if sys.argv[i][0] != '-':
-                print "INPUT ERROR: Every second argument has to be a flag, i.e. start with -. Please see --help for more information."
+                print("INPUT ERROR: Every second argument has to be a flag, i.e. start with -. Please see --help for more information.")
                 os._exit(1)    
     
     #####################   PRIMARY INPUT ARGUMENTS   ####################
@@ -910,7 +938,8 @@ def main():
     dbases                              = getParameterListFromCommandLine(sys.argv, '-dbs', flag_log, dbases)
 
     ##### SYSTEM ID #############        
-    SID = subprocess.check_output('whoami', shell=True).replace('\n','').replace('adm','').upper()
+    #SID = subprocess.check_output('whoami', shell=True).replace('\n','').replace('adm','').upper()
+    SID = run_command('whoami').replace('\n','').replace('adm','').upper()
               
     ############# OUTPUT DIRECTORY #########
     out_dir = out_dir.replace(" ","_").replace(".","_")
@@ -932,8 +961,8 @@ def main():
     ### email_client, -enc
     if email_client:  # allow to be empty --> no emails are sent --> HANAChecker just used to write critical mini-checks in the log file, with e.g. -ca dummy@dum.com
         if email_client not in ['mailx', 'mail', 'mutt']:
-            print "INPUT WARNING: The -enc flag does not specify any of the email clients mailx, mail, or mutt. If you are using an email client that can send emails with the command "
-            print '               <message> | <client> -s "<subject>" \n please let me know.'
+            print("INPUT WARNING: The -enc flag does not specify any of the email clients mailx, mail, or mutt. If you are using an email client that can send emails with the command ")
+            print('               <message> | <client> -s "<subject>" \n please let me know.')
             os._exit(1)
     emailSender = None
     if email_client:
@@ -942,7 +971,7 @@ def main():
     ### email_sender_address, -ens
     if email_sender_address:
         if not is_email(email_sender_address):
-            print "INPUT ERROR: The flag -ens must be a valid email. Please see --help for more information."
+            print("INPUT ERROR: The flag -ens must be a valid email. Please see --help for more information.")
             os._exit(1) 
         logman.emailSender.senderEmail = email_sender_address
     ### mail_server, -enm
@@ -951,10 +980,10 @@ def main():
     ### email_sender (DEPRICATED!), -en
     if email_sender:  # allow to be empty --> no emails are sent --> HANAChecker just used to write critical mini-checks in the log file
         if not len(email_sender) == 2:
-            print "INPUT ERROR: -en requires 2 elements, seperated by a comma. Note: -en is depricated. Please see --help for more information."
+            print("INPUT ERROR: -en requires 2 elements, seperated by a comma. Note: -en is depricated. Please see --help for more information.")
             os._exit(1)
         if not is_email(email_sender[0]):
-            print "INPUT ERROR: first element of -en has to be a valid email. Note: -en is depricated. Please see --help for more information."
+            print("INPUT ERROR: first element of -en has to be a valid email. Note: -en is depricated. Please see --help for more information.")
             os._exit(1)     
         logman.emailSender.senderEmail = email_sender[0]
         logman.emailSender.mailServer = email_sender[1]
@@ -978,103 +1007,109 @@ def main():
         hdbsql_string = "hdbsql -e -ssltrustcert -sslcreatecert "
     ### check_files, -mf
     if not check_files and not zip_file:
-        print "INPUT ERROR: Either -mf or -zf has to be specified. Please see --help for more information."
+        print("INPUT ERROR: Either -mf or -zf has to be specified. Please see --help for more information.")
         os._exit(1)
     ### zip_file, -zf
     if zip_file and not check_types:
-        print "INPUT ERROR: If -zf is specified also -ct has to be specified. Please see --help for more information."
+        print("INPUT ERROR: If -zf is specified also -ct has to be specified. Please see --help for more information.")
         os._exit(1)
     ### check_types, -ct
     if check_types and not zip_file:
-        print "INPUT ERROR: If -ct is specified also -zf has to be specified. Please see --help for more information."
+        print("INPUT ERROR: If -ct is specified also -zf has to be specified. Please see --help for more information.")
         os._exit(1)
     if check_types:
         for ct in check_types:
             if ct not in ['M', 'I', 'S', 'T', 'P', 'C', 'R', 'A']:
-                print "INPUT ERROR: -ct must be a comma seperated list where the elements can only be M, I, S, T, P, C, R, or A. Please see --help for more information."
+                print("INPUT ERROR: -ct must be a comma seperated list where the elements can only be M, I, S, T, P, C, R, or A. Please see --help for more information.")
                 os._exit(1)
         if len(check_types) != len(set(check_types)): # if duplicates
-            print "INPUT ERROR: -ct should not contain duplicates. Please see --help for more information."
+            print("INPUT ERROR: -ct should not contain duplicates. Please see --help for more information.")
             os._exit(1)
     ### active_threads, -at
     if active_threads and not is_number(active_threads):
         log("INPUT ERROR: -at must be a number. Please see --help for more information.", logman)
         os._exit(1)
     if active_threads and not 'C' in check_types:
-        print "INPUT ERROR: -at is set allthough there is no C in -ct. Please see --help for more information."
+        print("INPUT ERROR: -at is set allthough there is no C in -ct. Please see --help for more information.")
         os._exit(1)
     ### abap_schema, -abs
     if abap_schema and not 'A' in check_types:
-        print "INPUT ERROR: -abs is set allthough there is no A in -ct. Please see --help for more information."
+        print("INPUT ERROR: -abs is set allthough there is no A in -ct. Please see --help for more information.")
         os._exit(1)
     if 'A' in check_types and not abap_schema:
-        print "INPUT ERROR: There is an A in -ct but -abs is not defined. Please see --help for more information."
+        print("INPUT ERROR: There is an A in -ct but -abs is not defined. Please see --help for more information.")
         os._exit(1)
     ### checkEmailDict, -<CHID>
     for checkType, checkNumberEmailDict in checkEmailDict.items():
         for chid, emails in checkNumberEmailDict.items():
             for email in emails:
                 if not is_email(email):
-                    print "INPUT ERROR, -"+convertToCheckId(checkType, chid)+" is provided a non-valid email. Please see --help for more information."
+                    print("INPUT ERROR, -"+convertToCheckId(checkType, chid)+" is provided a non-valid email. Please see --help for more information.")
                     os._exit(1)
     ### check_groups, -cg
     if len(check_groups)%2:
-        print "INPUT ERROR: -cg must be a list with the length of multiple of 2. Please see --help for more information. check_groups = \n", check_groups
+        print("INPUT ERROR: -cg must be a list with the length of multiple of 2. Please see --help for more information. check_groups = \n", check_groups)
         os._exit(1)
     if len(check_groups):
-        check_groups = [check_groups[i*2:i*2+2] for i in range(len(check_groups)/2)]
+        if sys.version_info[0] == 2:
+            check_groups = [check_groups[i*2:i*2+2] for i in range(len(check_groups)/2)]  # / is integer division in Python 2
+        elif sys.version_info[0] == 3:
+            check_groups = [check_groups[i*2:i*2+2] for i in range(len(check_groups)//2)]  # // is integer division in Python 3
+        else:
+            print("ERROR: Wrong Python version")
+            os._exit(1)
         try:
             check_groups = [[[cg[0].split('-')[0], cg[0].split('-')[1]], cg[1]] for cg in check_groups]
         except:
-            print "INPUT ERROR: -cg must be in the format CHID1-CHID2,email,CHID3-CHID4,email and so on. Please see --help for more information."
+            print("INPUT ERROR: -cg must be in the format CHID1-CHID2,email,CHID3-CHID4,email and so on. Please see --help for more information.")
             os._exit(1)
         for cg in check_groups:
             if not is_check_id(cg[0][0]) or not is_check_id(cg[0][1]) or not is_email(cg[1]):
-                print "INPUT ERROR: -cg must be in the format CHID1-CHID2,email,CHID3-CHID4,email and so on. Please see --help for more information."
+                print("INPUT ERROR: -cg must be in the format CHID1-CHID2,email,CHID3-CHID4,email and so on. Please see --help for more information.")
                 os._exit(1)      
             if not get_check_type(cg[0][0]) == get_check_type(cg[0][1]):
-                print "INPUT ERROR: the two check IDs in a check group must be of the same check type. Please see --help for more information."
+                print("INPUT ERROR: the two check IDs in a check group must be of the same check type. Please see --help for more information.")
                 os._exit(1)            
         checkEmailDict = addCheckGroupsToDict(checkEmailDict, check_groups)
     ### ignore_checks_for_ca, -ic
     if len(ignore_checks_for_ca) and not len(catch_all_emails):
-        print "INPUT ERROR: -ic is specified but not -ca, this makes no sense. Please see --help for more information."
+        print("INPUT ERROR: -ic is specified but not -ca, this makes no sense. Please see --help for more information.")
         os._exit(1)
     for i in range(len(ignore_checks_for_ca)):
         if not is_check_id(ignore_checks_for_ca[i]):
-            print "INPUT ERROR: all elements of -ic must be a check id. Please see --help for more information."
+            print("INPUT ERROR: all elements of -ic must be a check id. Please see --help for more information.")
             os._exit(1)
     ### ignore_checks, -il
     for i in range(len(ignore_checks)):
         if not is_check_id(ignore_checks[i]):
-            print "INPUT ERROR: all elements of -il must be a check id. Please see --help for more information."
+            print("INPUT ERROR: all elements of -il must be a check id. Please see --help for more information.")
             os._exit(1)
     ### catch_all_emails, -ca
     if len(catch_all_emails):
         for ca in catch_all_emails:
             if not is_email(ca):
-                print "INPUT ERROR: -ca must be in the format email,email,email and so on. Please see --help for more information."
+                print("INPUT ERROR: -ca must be in the format email,email,email and so on. Please see --help for more information.")
                 os._exit(1)
         checkEmailDict = addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks_for_ca)   
     ### parameter_emails, -pe
     if len(parameter_emails):
         for pe in parameter_emails:
             if not is_email(pe):
-                print "INPUT ERROR: -pe must be in the format email,email,email and so on. Please see --help for more information."
+                print("INPUT ERROR: -pe must be in the format email,email,email and so on. Please see --help for more information.")
                 os._exit(1)     
     parameter_emails.extend(catch_all_emails)   # catch-all-emails also catch parameter critical checks
     ### sql_emails, -se
     if len(sql_emails):
         for se in sql_emails:
             if not is_email(se):
-                print "INPUT ERROR: -se must be in the format email,email,email and so on. Please see --help for more information."
+                print("INPUT ERROR: -se must be in the format email,email,email and so on. Please see --help for more information.")
                 os._exit(1)     
     sql_emails.extend(catch_all_emails)         # catch-all-emails also catch sql statements with recommendations
     ### error_emails, -ee
     if len(error_emails):
         for ee in error_emails:
             if not is_email(ee):
-                print "INPUT ERROR: -ee must be in the format email,email,email and so on. Please see --help for more information."
+                print("INPUT ERROR: -ee must be in the format email,email,email and so on. Please see --help for more information.")
                 os._exit(1)     
     error_emails.extend(catch_all_emails)         # catch-all-emails also catch the most important HANAChecker errors
     ### dbases, -dbs, and dbuserkeys, -k
@@ -1107,7 +1142,8 @@ def main():
                 ########### IF MINICHECK FILES FROM -ct WE HAVE TO CLEAN UP ################
                 if check_types:
                     check_files = []           
-                    subprocess.check_output('rm -r '+tmp_sql_dir, shell=True)
+                    #subprocess.check_output('rm -r '+tmp_sql_dir, shell=True)
+                    dummyout = run_command('rm -r '+tmp_sql_dir)
                     zip_ref.close()
         # HANACHECKER INTERVALL
         if hanachecker_interval < 0: 

@@ -322,6 +322,8 @@ def checkUserKey(dbuserkey, virtual_local_host, logman, error_emails):
         os._exit(1)
     #local_host = subprocess.check_output("hostname", shell=True).replace('\n','') if virtual_local_host == "" else virtual_local_host
     local_host = run_command("hostname").replace('\n','') if virtual_local_host == "" else virtual_local_host
+    if not is_integer(local_host.split('.')[0]):    #first check that it is not an IP address
+        local_host = local_host.split('.')[0]  #if full host name is specified in the local host (or virtual host), only the first part is used
     ENV = key_environment.split('\n')[1].replace('  ENV : ','').split(',')
     #key_hosts = [env.split(':')[0] for env in ENV]
     key_hosts = [env.split(':')[0].split('.')[0] for env in ENV]  #if full host name is specified in the Key, only the first part is used

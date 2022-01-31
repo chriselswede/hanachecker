@@ -78,7 +78,7 @@ def printHelp():
     print(" python hanachecker.py -k T1KEY -zf SQLStatements.zip -ct M,S -M1142 chris@du.my,lena@du.my -M1165 per@du.my,lena@du.my -S0120 chris@du.my -as true -oe true ")
     print("                                                                                                                                                    ")
     print(" TODO: test                                                                                                                                         ")
-    print("       CALL SYS.STATISTICSSERVER_SENDMAIL_DEV('SMTP',25,'emailfrom',’emailto1,emailto2','Test mail from HANA system subject','Test body from HANA, body',?); ")
+    print("       CALL SYS.STATISTICSSERVER_SENDMAIL_DEV('SMTP',25,'emailfrom','emailto1,emailto2','Test mail from HANA system subject','Test body from HANA, body',?); ")
     print("                                                                                                                                                    ")
     print("AUTHOR: Christian Hansen                                                                                                                            ")
     print("                                                                                                                                                    ")
@@ -501,7 +501,7 @@ def getCheckFiles(tmp_sql_dir, check_types, version, revision, active_threads, a
                 fin = open(cs_mc_file, "rt")
                 fout = open(cs_mc_file_temp, "wt") # will be removed when tmp_sql_dir is removed 
                 for line in fin:
-	                fout.write(line.replace('0.2 MIN_ACTIVE_THREADS', active_threads+' MIN_ACTIVE_THREADS'))
+                    fout.write(line.replace('0.2 MIN_ACTIVE_THREADS', active_threads+' MIN_ACTIVE_THREADS'))
                 fin.close()
                 fout.close()
                 check_files.append(cs_mc_file_temp)
@@ -887,7 +887,7 @@ def main():
                             checkId = convertToCheckId(checkFlagType, checkFlagNumber)
                             if firstWord == '-'+checkId:
                                 checkEmailDict[checkFlagType][checkFlagNumber] = [x for x in flagValue.split(',')]
-                                flag_log['-'+checkId] = [flag_value, flag_file]
+                                flag_log['-'+checkId] = [flagValue, flag_file]
                     if firstWord == '-cg': 
                         check_groups += [x for x in flagValue.split(',')]
                         if '-cg' in flag_log:
@@ -929,7 +929,7 @@ def main():
             checkId = convertToCheckId(checkFlagType, checkFlagNumber)
             if '-'+checkId in sys.argv:
                 checkEmailDict[checkFlagType][checkFlagNumber] = [x for x in sys.argv[  sys.argv.index('-'+checkId) + 1   ].split(',')]
-                flag_log['-'+checkId] = [flag_value, flag_file]
+                flag_log['-'+checkId] = [flagValue, flag_file]
     check_groups                        = getParameterListFromCommandLine(sys.argv, '-cg', flag_log, check_groups)
     parameter_emails                    = getParameterListFromCommandLine(sys.argv, '-pe', flag_log, parameter_emails)
     sql_emails                          = getParameterListFromCommandLine(sys.argv, '-se', flag_log, sql_emails)

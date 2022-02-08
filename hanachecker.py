@@ -817,7 +817,7 @@ def main():
     flag_files = []     #default: no configuration input file
     check_files = None
     zip_file = None
-    check_types = None
+    check_types = []
     checkEmailDict = {'M':{}, 'I':{}, 'S':{}, 'T':{}, 'C':{}, 'A':{}}  #mini, internal, security, trace, call stack, ABAP
     check_groups = []
     parameter_emails = []

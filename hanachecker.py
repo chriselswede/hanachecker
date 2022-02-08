@@ -262,10 +262,13 @@ class SQLManager:
 
 ######################## DEFINE FUNCTIONS ################################
 
-def run_command(cmd):
+def run_command(cmd, ignore_error = False):  #ignore_error only makes sense in Python 2
     if sys.version_info[0] == 2: 
-        out = subprocess.check_output(cmd, shell=True).strip("\n")
-    elif sys.version_info[0] == 3:
+        if ignore_error:
+            out = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT).strip("\n")
+        else:
+            out = subprocess.check_output(cmd, shell=True).strip("\n")
+    elif sys.version_info[0] == 3:  #run().stderr is ignored
         out = subprocess.run(cmd, shell=True, capture_output=True, text=True).stdout.strip("\n")
     else:
         print("ERROR: Wrong Python version")
@@ -460,8 +463,7 @@ def getFileVersion(base_file_name, tmp_sql_dir, version, revision):
     revision_number_str = get_revision_number_str(version, revision)
     try:
         #output = subprocess.check_output('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt', shell=True, stderr=subprocess.STDOUT) #removes SHC
-        output = run_command('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt') #this might be a problem ... from https://docs.python.org/3/library/subprocess.html#subprocess.getoutput : 
-            #The stdout and stderr arguments may not be supplied at the same time as capture_output. If you wish to capture and combine both streams into one, use stdout=PIPE and stderr=STDOUT instead of capture_output.
+        output = run_command('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt', True)   #[12] removes SHC
     except Exception as e:
         output = str(e.output)
     output = output.splitlines(1)

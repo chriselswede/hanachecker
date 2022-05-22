@@ -428,16 +428,16 @@ def log_with_emails(message, logman, error_emails):
     else:
         log(message, logman)
 
-def hana_version_revision(sqlman):
+def hana_version_rev_mrev(sqlman):
     #command_run = subprocess.check_output(sqlman.hdbsql_jAU + " \"select value from sys.m_system_overview where name = 'Version'\"", shell=True)
     command_run = run_command(sqlman.hdbsql_jAU + " \"select value from sys.m_system_overview where name = 'Version'\"")
     hanaver = command_run.splitlines(1)[2].split('.')[0].replace('| ','')
     hanarev = command_run.splitlines(1)[2].split('.')[2]
-    #hanamrev = command_run.splitlines(1)[2].split('.')[3]   #We dont need the maintenence revision
+    hanamrev = command_run.splitlines(1)[2].split('.')[3]
     if not is_integer(hanarev):
         print("ERROR: something went wrong checking hana revision.")
         os._exit(1)
-    return [int(hanaver), int(hanarev)]
+    return [int(hanaver), int(hanarev), int(hanamrev)]
 
 def get_file_revision_number_str(file_name, base_file_name, tmp_sql_dir):
     if '+' not in file_name:
@@ -447,20 +447,29 @@ def get_file_revision_number_str(file_name, base_file_name, tmp_sql_dir):
         if not file_revision:
             file_revision = '0'
         file_revision = file_revision.split('.')
-        if len(file_revision) >= 3:
-            file_revision = file_revision[0]+file_revision[1]+file_revision[2]  #hopefully we never need to care about maintanance revision 
+        if len(file_revision) == 3:
+            file_revision = file_revision[0]+file_revision[1]+file_revision[2]+'00'  #then maintanance revision is 00 
+        elif len(file_revision) == 4:
+            file_revision = file_revision[0]+file_revision[1]+file_revision[2]+file_revision[3]
+        else:
+            print("ERROR: Something went wrong with file revision.")
+            os._exit(1)
     return file_revision 
 
-def get_revision_number_str(version, revision):
+def get_revision_number_str(version, revision, mrevision):
+    mrevision_str = str(mrevision)
+    if mrevision < 10:
+        mrevision_str = '0'+str(mrevision)
     revision_str = '00'+str(revision)
     if revision < 10:
         revision_str = '0000'+str(revision)
     elif revision < 100:
         revision_str = '000'+str(revision)
-    return str(version)+revision_str                   
+    return str(version)+revision_str+mrevision_str                   
         
-def getFileVersion(base_file_name, tmp_sql_dir, version, revision):
-    revision_number_str = get_revision_number_str(version, revision)
+def getFileVersion(base_file_name, tmp_sql_dir, version, revision, mrevision):
+    revision_number_str = get_revision_number_str(version, revision, mrevision)
+    print("revision_number_str = ", revision_number_str)
     try:
         #output = subprocess.check_output('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt', shell=True, stderr=subprocess.STDOUT) #removes SHC
         output = run_command('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt', True)   #[12] removes SHC
@@ -479,19 +488,19 @@ def getFileVersion(base_file_name, tmp_sql_dir, version, revision):
             chosen_file_name = file_name
     return chosen_file_name
 
-def getCheckFiles(tmp_sql_dir, check_types, version, revision, active_threads, abap_schema):
+def getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision, active_threads, abap_schema):
     check_files = []
     for ct in check_types:
         if ct == 'M':
-            check_files.append(getFileVersion('HANA_Configuration_MiniChecks', tmp_sql_dir, version, revision))    
+            check_files.append(getFileVersion('HANA_Configuration_MiniChecks', tmp_sql_dir, version, revision, mrevision))    
         elif ct == 'I':
-            check_files.append(getFileVersion('HANA_Configuration_MiniChecks_Internal', tmp_sql_dir, version, revision))
+            check_files.append(getFileVersion('HANA_Configuration_MiniChecks_Internal', tmp_sql_dir, version, revision, mrevision))
         elif ct == 'S':
-            check_files.append(getFileVersion('HANA_Security_MiniChecks', tmp_sql_dir, version, revision))
+            check_files.append(getFileVersion('HANA_Security_MiniChecks', tmp_sql_dir, version, revision, mrevision))
         elif ct == 'T':
-            check_files.append(getFileVersion('HANA_TraceFiles_MiniChecks', tmp_sql_dir, version, revision))
+            check_files.append(getFileVersion('HANA_TraceFiles_MiniChecks', tmp_sql_dir, version, revision, mrevision))
         elif ct == 'P':
-            check_files.append(getFileVersion('HANA_Configuration_Parameters', tmp_sql_dir, version, revision))
+            check_files.append(getFileVersion('HANA_Configuration_Parameters', tmp_sql_dir, version, revision, mrevision))
         elif ct == 'C':
             revision_number_str = get_revision_number_str(version, revision)
             if int(revision_number_str) < 200040:
@@ -931,7 +940,7 @@ def main():
             checkId = convertToCheckId(checkFlagType, checkFlagNumber)
             if '-'+checkId in sys.argv:
                 checkEmailDict[checkFlagType][checkFlagNumber] = [x for x in sys.argv[  sys.argv.index('-'+checkId) + 1   ].split(',')]
-                flag_log['-'+checkId] = [flagValue, flag_file]
+                flag_log['-'+checkId] = [sys.argv[  sys.argv.index('-'+checkId) + 1   ], "command line"]
     check_groups                        = getParameterListFromCommandLine(sys.argv, '-cg', flag_log, check_groups)
     parameter_emails                    = getParameterListFromCommandLine(sys.argv, '-pe', flag_log, parameter_emails)
     sql_emails                          = getParameterListFromCommandLine(sys.argv, '-se', flag_log, sql_emails)
@@ -1137,8 +1146,8 @@ def main():
                     tmp_sql_dir = "./tmp_sql_statements/"
                     zip_ref = zipfile.ZipFile(zip_file, 'r')
                     zip_ref.extractall(tmp_sql_dir) 
-                    [version, revision] = hana_version_revision(sqlman)
-                    check_files = getCheckFiles(tmp_sql_dir, check_types, version, revision, active_threads, abap_schema)
+                    [version, revision, mrevision] = hana_version_rev_mrev(sqlman)
+                    check_files = getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision, active_threads, abap_schema)
                 ##### GET CRITICAL MINICHECKS FROM ALL MINI-CHECK FILES (either from -ct or -mf) ############
                 critical_checks = getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, logman)
                 ##### SEND EMAILS FOR ALL CRITICAL MINI-CHECKS THAT HAVE A CORRESPONDING EMAIL ADDRESS ######

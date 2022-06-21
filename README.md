@@ -1,8 +1,8 @@
-# SAP HANAChecker  
+# HANAChecker  
 A monitoring script to automatically execute the SAP HANA's mini-checks and send alert emails
 
 ### DESCRIPTION:  
-The SAP HANAChecker executes SQL: "HANA_Configuration_MiniChecks" (See SAP Note [1969700](https://launchpad.support.sap.com/#/notes/=1969700) and SAP Note [1999993](https://launchpad.support.sap.com/#/notes/=1999993)). For every "potential critical" mini-check, i.e. where the column C has an X, it sends out an email to the email address specified for that particular mini-check. This can run "forever" with a specified interval. See also SAP Note [1999993](https://launchpad.support.sap.com/#/notes/=1999993).
+The HANAChecker executes SQL: "HANA_Configuration_MiniChecks" (See SAP Note [1969700](https://launchpad.support.sap.com/#/notes/=1969700) and SAP Note [1999993](https://launchpad.support.sap.com/#/notes/=1999993)). For every "potential critical" mini-check, i.e. where the column C has an X, it sends out an email to the email address specified for that particular mini-check. This can run "forever" with a specified interval. See also SAP Note [1999993](https://launchpad.support.sap.com/#/notes/=1999993).
 
 ### DISCLAIMER:   
 ANY USAGE OF HANACHECKER ASSUMES THAT YOU HAVE UNDERSTOOD AND AGREED THAT:  

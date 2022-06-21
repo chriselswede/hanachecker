@@ -54,13 +54,18 @@ def printHelp():
     print(" -oc     output configuration [true/false], logs, in the emails send out if -as is set, all parameters set by the flags and where the flags were    ")
     print("         set, i.e. what flag file(one of the files listed in -ff) or if it was set via a flag specified on the command line, default = false        ")
     print("         *** EMAIL ***                                                                                                                              ")
+    print("         Possibly there is no need for any -en* flag. This depends on the configuration of your email client. If you recieve en email from this     ")
+    print('                             echo "Text in email" | mailx -s "subject" <your email address>                                                         ')
+    print("         then there is no need for any -en* flag. Contact your Linux expert for more information.                                                   ")
     print(" -enc    email client, for example mail, mailx, mutt, ...,                                       default: mailx                                     ")
     print("         NOTE: If you want to use HANAChecker just to write log files, without sending emails, then specify this flag empty, -enc '', and provide a ")
     print("               dummy email address for the -ca flag  to write to file all potential critical mini-checks                                            ")
     print('         NOTE: For e.g. mailx to work you have to install the linux program "sendmail" and add something like DSsmtp.intra.ourcompany.com in the    ')
     print("               file sendmail.cf in /etc/mail/, see https://www.systutorials.com/5167/sending-email-using-mailx-in-linux-through-internal-smtp/      ")
     print(" -ens    sender's email, to explicitly specify sender's email address, this might not be needed,   default:    (configured sender's email used)     ")
+    print("         This is the same as adding    -S from=<senders email address>     to the echo statement above                                              ")
     print(" -enm    mail server, to explicitly specify mail server, this might not be needed,                 default:    (configured mail server used)        ")
+    print("         This is the same as adding    -S smtp=smtp://<email server>       to the echo statement above                                              ")
     print(" -en     depricated! email notification, <sender's email>,<mail server>   example: me@ourcompany.com,smtp.intra.ourcompany.com    Don't use!        ")
     print("         *** ADMIN ***                                                                                                                              ")
     print(" -hci    hana checker interval [days], number days that HANA Checker waits before it checks again, default: -1 (exits after 1 cycle)                ")
@@ -469,7 +474,6 @@ def get_revision_number_str(version, revision, mrevision):
         
 def getFileVersion(base_file_name, tmp_sql_dir, version, revision, mrevision):
     revision_number_str = get_revision_number_str(version, revision, mrevision)
-    print("revision_number_str = ", revision_number_str)
     try:
         #output = subprocess.check_output('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt', shell=True, stderr=subprocess.STDOUT) #removes SHC
         output = run_command('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt', True)   #[12] removes SHC
@@ -992,6 +996,7 @@ def main():
         logman.emailSender.mailServer = mail_server
     ### email_sender (DEPRICATED!), -en
     if email_sender:  # allow to be empty --> no emails are sent --> HANAChecker just used to write critical mini-checks in the log file
+        print("WARNING: The flag -en is DEPRICATED! See --help for more information.")
         if not len(email_sender) == 2:
             print("INPUT ERROR: -en requires 2 elements, seperated by a comma. Note: -en is depricated. Please see --help for more information.")
             os._exit(1)

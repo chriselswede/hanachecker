@@ -11,7 +11,8 @@ ANY USAGE OF HANACHECKER ASSUMES THAT YOU HAVE UNDERSTOOD AND AGREED THAT:
 3. HANAChecker is provided "as is"  
 4. HANAChecker is to be used on "your own risk"  
 5. HANAChecker is a one-man's hobby (developed, maintained and supported only during non-working hours)  
-6. All HANAChecker documentations have to be read and understood before any usage:  
+6. HANAChecker expects "default" HANA environment with no modifications done in the .bashrc or other files
+8. All HANAChecker documentations have to be read and understood before any usage:  
 * The .pdf file hanachecker.pdf  
 * All output from executing    `python hanachecker.py --help`  
-7. HANAChecker is not providing any recommendations, all flags shown in the documentation (see point 6.) are only examples
+9. HANAChecker is not providing any recommendations, all flags shown in the documentation (see point 6.) are only examples

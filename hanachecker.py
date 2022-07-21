@@ -1163,7 +1163,11 @@ def main():
                 ########## GET MINICHECK FILES FROM -ct if not -mf specified ##############
                 if check_types:        
                     tmp_sql_dir = "./tmp_sql_statements/"
-                    zip_ref = zipfile.ZipFile(zip_file, 'r')
+                    try:
+                        zip_ref = zipfile.ZipFile(zip_file, 'r')
+                    except:
+                        message = "ERROR: The .zip file is corrupt. Test with e.g. \n python /usr/sap/<SID>/HDB00/exe/Python3/lib/python3.7/zipfile.py -t <zip file>"
+                        os._exit(1)
                     zip_ref.extractall(tmp_sql_dir) 
                     [version, revision, mrevision] = hana_version_rev_mrev(sqlman)
                     check_files = getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision, active_threads, abap_schema)

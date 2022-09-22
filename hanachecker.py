@@ -318,7 +318,6 @@ def cdalias(alias):   # alias e.g. cdtrace, cdhdb, ...
         
 def checkUserKey(dbuserkey, virtual_local_host, logman, error_emails):
     try: 
-        #key_environment = subprocess.check_output('''hdbuserstore LIST '''+dbuserkey, shell=True) 
         key_environment = run_command('''hdbuserstore LIST '''+dbuserkey)
         if "NOT FOUND" in key_environment:
             message = "ERROR, the key "+dbuserkey+" is not maintained in hdbuserstore."
@@ -328,7 +327,6 @@ def checkUserKey(dbuserkey, virtual_local_host, logman, error_emails):
         message = "ERROR, the key "+dbuserkey+" is not maintained in hdbuserstore."
         log_with_emails(message, logman, error_emails)
         os._exit(1)
-    #local_host = subprocess.check_output("hostname", shell=True).replace('\n','') if virtual_local_host == "" else virtual_local_host
     local_host = run_command("hostname").replace('\n','') if virtual_local_host == "" else virtual_local_host
     if not is_integer(local_host.split('.')[0]):    #first check that it is not an IP address
         local_host = local_host.split('.')[0]  #if full host name is specified in the local host (or virtual host), only the first part is used
@@ -423,7 +421,6 @@ def log(message, logman, file_name = "", recieversEmail = ""):
             if logman.emailSender.senderEmail:
                 mailstring += ' -S from="'+logman.emailSender.senderEmail+'" '
             mailstring += recieversEmail
-            #subprocess.check_output(mailstring, shell=True)
             dummyout = run_command(mailstring)
 
 def log_with_emails(message, logman, error_emails):
@@ -434,7 +431,6 @@ def log_with_emails(message, logman, error_emails):
         log(message, logman)
 
 def hana_version_rev_mrev(sqlman):
-    #command_run = subprocess.check_output(sqlman.hdbsql_jAU + " \"select value from sys.m_system_overview where name = 'Version'\"", shell=True)
     command_run = run_command(sqlman.hdbsql_jAU + " \"select value from sys.m_system_overview where name = 'Version'\"")
     hanaver = command_run.splitlines(1)[2].split('.')[0].replace('| ','')
     hanarev = command_run.splitlines(1)[2].split('.')[2]
@@ -475,7 +471,6 @@ def get_revision_number_str(version, revision, mrevision):
 def getFileVersion(base_file_name, tmp_sql_dir, version, revision, mrevision):
     revision_number_str = get_revision_number_str(version, revision, mrevision)
     try:
-        #output = subprocess.check_output('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt', shell=True, stderr=subprocess.STDOUT) #removes SHC
         output = run_command('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt', True)   #[12] removes SHC
     except Exception as e:
         output = str(e.output)
@@ -566,12 +561,11 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
         elif 'ABAP' in check_file:
             checkType = 'A'
         try:
-            #result = subprocess.check_output(sqlman.hdbsql_jAaxU + ' -I '+check_file, shell=True).splitlines()
             result = run_command(sqlman.hdbsql_jAaxU + ' -I '+check_file).splitlines()
         except:
             log("ERROR: The check file "+check_file+" could not be executed. Either there is a problem with the check file (did you get the latest SQLStatements.zip from SAP Note 1969700?) or there is a problem with the user (is user properly saved in hdbuserstore?) or there is another problem (OOM?).", logman)
             os._exit(1)
-        result = [ [word.strip(' ') for word in line.split('|')] for line in result]           
+        result = [ [word.strip(' ') for word in line.split('|')] for line in result]   
         old_checkId = "-1"
         old_description = ""
         for line in result:
@@ -682,7 +676,6 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
 def ping_db(sqlman, logman, error_emails):
     with open(os.devnull, 'w') as devnull:  # just to get no stdout in case HANA is offline
         try:
-            #command_run = subprocess.check_output(sqlman.hdbsql_jAaxU + ' "select * from dummy"', shell=True, stderr=devnull).splitlines(1)
             command_run = run_command(sqlman.hdbsql_jAaxU + ' "select * from dummy"').splitlines(1) #this might be a problem ... from https://docs.python.org/3/library/subprocess.html#subprocess.getoutput : 
             #The stdout and stderr arguments may not be supplied at the same time as capture_output. If you wish to capture and combine both streams into one, use stdout=PIPE and stderr=STDOUT instead of capture_output.
             output = command_run[0].strip("\n").strip("|").strip(" ")
@@ -803,8 +796,6 @@ def main():
         if sys.version_info[1] != 7:
             print("VERSION ERROR: hanachecker is only supported for Python 2.7.x (for HANA 2 SPS05 and lower) and for Python 3.7.x (for HANA 2 SPS06 and higher). Did you maybe forget to log in as <sid>adm before executing this?")
             os._exit(1)
-    if sys.version_info[0] == 3:
-        print("VERSION WARNING: You are among the first using HANAChecker on Python 3. As always, use on your own risk, and please report issues to christian.hansen01@sap.com. Thank you!")
 
     #####################   DEFAULTS   ####################
     email_client = 'mailx'   #default email client
@@ -866,6 +857,8 @@ def main():
     if '-d' in sys.argv or '--disclaimer' in sys.argv:
         printDisclaimer() 
     flag_files = getParameterListFromCommandLine(sys.argv, '-ff', flag_log, flag_files)
+    if flag_files:
+        print("Make sure the configuration file only contains ascii characters!")
      
     ############ CONFIGURATION FILE ###################
     for flag_file in flag_files:
@@ -955,7 +948,6 @@ def main():
     dbases                              = getParameterListFromCommandLine(sys.argv, '-dbs', flag_log, dbases)
 
     ##### SYSTEM ID #############        
-    #SID = subprocess.check_output('whoami', shell=True).replace('\n','').replace('adm','').upper()
     SID = run_command('whoami').replace('\n','').replace('adm','').upper()
               
     ############# OUTPUT DIRECTORY #########
@@ -1164,7 +1156,6 @@ def main():
                 ########### IF MINICHECK FILES FROM -ct WE HAVE TO CLEAN UP ################
                 if check_types:
                     check_files = []           
-                    #subprocess.check_output('rm -r '+tmp_sql_dir, shell=True)
                     dummyout = run_command('rm -r '+tmp_sql_dir)
                     zip_ref.close()
         # HANACHECKER INTERVALL

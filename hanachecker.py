@@ -35,7 +35,7 @@ def printHelp():
     print("         still be included in the log files), default '' (not used)                                                                                 ")
     print(" -il     ignore list, a list of mini-check CHIDs (seperated by commas) that are ignored (i.e. not even in log files), default '' (not used)         ")
     print("         ----  HOST  ----                                                                                                                           ")
-    print(" -vlh    virtual local host, if hanacleaner runs on a virtual host this can be specified, default: '' (physical host is assumed)                    ")
+    print(" -vlh    virtual local host, if hanachecker runs on a virtual host this can be specified, default: '' (physical host is assumed)                    ")
     print("         *** INPUT ***                                                                                                                              ")
     print(" -mf     full path(s) of a mini-check file(s)                                                                                                       ")
     print("         Example:  -mf /tmp/SQLStatements/HANA_Configuration_MiniChecks_1.00.102.01+.txt                                                            ")
@@ -50,6 +50,7 @@ def printHelp():
     print("         *** OUTPUT ***                                                                                                                             ")
     print(" -od     output directory, full path of the folder where the log files will end up (if not exist it will be created),                               ")
     print("         default: '/tmp/hanachecker_output'                                                                                                         ")
+    print(" -or     output retention days, logs in the path specified with -od are only saved for this number of days, default: -1 (not used)                  ")
     print(" -so     standard out switch, 1: write to std out, 0: do not write to std out, default:  1                                                          ")
     print(" -oc     output configuration [true/false], logs, in the emails send out if -as is set, all parameters set by the flags and where the flags were    ")
     print("         set, i.e. what flag file(one of the files listed in -ff) or if it was set via a flag specified on the command line, default = false        ")
@@ -372,7 +373,7 @@ def get_check_number(checkString):
         
 def checkIfAcceptedFlag(word):
     if not is_check_id(word.strip('-')):
-        if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-se", "-ee", "-is", "-at", "-abs", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-ct", "-ff", "-od", "-so", "-oc", "-enc", "-ens", "-enm", "-en", "-hci", "-ssl", "-k", "-dbs"]:
+        if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-se", "-ee", "-is", "-at", "-abs", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-ct", "-ff", "-od", "-or", "-so", "-oc", "-enc", "-ens", "-enm", "-en", "-hci", "-ssl", "-k", "-dbs"]:
             print("INPUT ERROR: ", word, " is not one of the accepted input flags. Please see --help for more information.")
             os._exit(1)
 
@@ -401,10 +402,17 @@ def getParameterListFromCommandLine(sysargv, flag_string, flag_log, parameter, d
         flag_log[flag_string] = [','.join(parameter), "command line"]
     return parameter
 
+def clean_output(minRetainedOutputDays, sqlman, logman):
+    path = logman.out_dir
+    nFilesBefore = len([name for name in os.listdir(path) if os.path.isfile(os.path.join(path, name))])
+    dummyout = run_command("find "+path+"/hanacheckerlog* -mtime +"+str(minRetainedOutputDays)+" -delete")
+    nFilesAfter = len([name for name in os.listdir(path) if os.path.isfile(os.path.join(path, name))])
+    return nFilesBefore - nFilesAfter  
+
 def log(message, logman, file_name = "", recieversEmail = ""):
     logMessage = '"'+message+'"' 
     if logman.emailSender:    
-        logMessage += " is sent to " + recieversEmail if recieversEmail else message
+        logMessage = logMessage + " is sent to " + recieversEmail if recieversEmail else message
     if logman.std_out:
         print(logMessage)
     if file_name == "":
@@ -792,7 +800,9 @@ def main():
     global chidMax
     
     #####################  CHECK PYTHON VERSION ###########
-    if sys.version_info[0] != 2 and sys.version_info[0] != 3:
+    pythonversion = sys.version_info
+    print("HANAChecker started on python ", str(pythonversion[0])+"."+str(pythonversion[1])+"."+str(pythonversion[2]))
+    if pythonversion[0] != 2 and pythonversion[0] != 3:
         if sys.version_info[1] != 7:
             print("VERSION ERROR: hanachecker is only supported for Python 2.7.x (for HANA 2 SPS05 and lower) and for Python 3.7.x (for HANA 2 SPS06 and higher). Did you maybe forget to log in as <sid>adm before executing this?")
             os._exit(1)
@@ -803,6 +813,7 @@ def main():
     mail_server = ''
     email_sender = []    #depricated!
     hanachecker_interval = -1
+    minRetainedOutputDays = -1
     ignore_check_why_set = "false"
     active_threads = ''
     abap_schema = ''
@@ -858,7 +869,7 @@ def main():
         printDisclaimer() 
     flag_files = getParameterListFromCommandLine(sys.argv, '-ff', flag_log, flag_files)
     if flag_files:
-        print("Make sure the configuration file only contains ascii characters!")
+        print("Double check that the configuration file only contains ascii characters!")
      
     ############ CONFIGURATION FILE ###################
     for flag_file in flag_files:
@@ -887,6 +898,7 @@ def main():
                     std_out                             = getParameterFromFile(firstWord, '-so', flagValue, flag_file, flag_log, std_out)
                     out_config                          = getParameterFromFile(firstWord, '-oc', flagValue, flag_file, flag_log, out_config)
                     out_dir                             = getParameterFromFile(firstWord, '-od', flagValue, flag_file, flag_log, out_dir)
+                    minRetainedOutputDays               = getParameterFromFile(firstWord, '-or', flagValue, flag_file, flag_log, minRetainedOutputDays)
                     check_files                         = getParameterListFromFile(firstWord, '-mf', flagValue, flag_file, flag_log, check_files)
                     zip_file                            = getParameterFromFile(firstWord, '-zf', flagValue, flag_file, flag_log, zip_file)
                     check_types                         = getParameterListFromFile(firstWord, '-ct', flagValue, flag_file, flag_log, check_types)
@@ -929,6 +941,7 @@ def main():
     std_out                             = getParameterFromCommandLine(sys.argv, '-so', flag_log, std_out)
     out_config                          = getParameterFromCommandLine(sys.argv, '-oc', flag_log, out_config)
     out_dir                             = getParameterFromCommandLine(sys.argv, '-od', flag_log, out_dir)
+    minRetainedOutputDays               = getParameterFromCommandLine(sys.argv, '-or', flag_log, minRetainedOutputDays)
     check_files                         = getParameterListFromCommandLine(sys.argv, '-mf', flag_log, check_files)
     zip_file                            = getParameterFromCommandLine(sys.argv, '-zf', flag_log, zip_file)
     check_types                         = getParameterListFromCommandLine(sys.argv, '-ct', flag_log, check_types)
@@ -1002,6 +1015,11 @@ def main():
         log("INPUT ERROR: -hci must be an integer. Please see --help for more information.", logman)
         os._exit(1)
     hanachecker_interval = int(hanachecker_interval)*24*3600  # days to seconds
+    ### minRetainedOutputDays, -or
+    if not is_integer(minRetainedOutputDays):
+        log("INPUT ERROR: -or must be an integer. Please see --help for more information.", logman)
+        os._exit(1)
+    minRetainedOutputDays = int(minRetainedOutputDays)
     ### one_email, -oe
     one_email = checkAndConvertBooleanFlag(one_email, "-oe")
     ### ignore_check_why_set, -is
@@ -1145,6 +1163,7 @@ def main():
                         zip_ref = zipfile.ZipFile(zip_file, 'r')
                     except:
                         message = "ERROR: The .zip file is corrupt. Test with e.g. \n python /usr/sap/<SID>/HDB00/exe/Python3/lib/python3.7/zipfile.py -t <zip file>"
+                        log_with_emails(message, logman, error_emails)
                         os._exit(1)
                     zip_ref.extractall(tmp_sql_dir) 
                     [version, revision, mrevision] = hana_version_rev_mrev(sqlman)
@@ -1158,6 +1177,11 @@ def main():
                     check_files = []           
                     dummyout = run_command('rm -r '+tmp_sql_dir)
                     zip_ref.close()
+        ###### CLEANING OF HANACHECKER LOGS #####
+        if minRetainedOutputDays >= 0:
+            nCleaned = clean_output(minRetainedOutputDays, sqlman, logman)
+            message = str(nCleaned)+" hanachecker log files were removed (based on the flag -or)"
+            log(message, logman)
         # HANACHECKER INTERVALL
         if hanachecker_interval < 0: 
             sys.exit()

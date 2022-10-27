@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
-import sys, time, os, subprocess
+import sys, time, os, subprocess, re
 import zipfile
 
 
@@ -68,6 +68,13 @@ def printHelp():
     print(" -enm    mail server, to explicitly specify mail server, this might not be needed,                 default:    (configured mail server used)        ")
     print("         This is the same as adding    -S smtp=smtp://<email server>       to the echo statement above                                              ")
     print(" -en     depricated! email notification, <sender's email>,<mail server>   example: me@ourcompany.com,smtp.intra.ourcompany.com    Don't use!        ")
+    print("         ---- INSTANCE ONLINE CHECK ----                                                                                                            ")
+    print(" -oi     online test interval [days],    < 0: HANAChecker does not check if online or secondary,                            default: -1 (not used)  ")
+    print("                                         = 0: if not online or not primary HANAChecker will abort                                                   ")
+    print("                                         > 0: time it waits before it checks if DB is online and primary again                                      ")
+    print("                                              Note: For the > 0 option it might be necessary to use cron with the lock option                       ")
+    print("                                                    See the HANASitter & CRON slide in the HANASitter pdf                                           ")
+    print("         Note: for now, -oi is not supported for a server running HANA Cockpit                                                                      ")
     print("         *** ADMIN ***                                                                                                                              ")
     print(" -hci    hana checker interval [days], number days that HANA Checker waits before it checks again, default: -1 (exits after 1 cycle)                ")
     print("         NOTE: Do NOT use if you run hanachecker in a cron job!                                                                                     ")
@@ -301,21 +308,27 @@ def is_email(s):
         return False
     return '.' in s[1]
 
-def cdalias(alias):   # alias e.g. cdtrace, cdhdb, ...
-    #command_run = subprocess.check_output(['/bin/bash', '-i', '-c', "alias "+alias])
-    process = subprocess.Popen(['/bin/bash', '-i', '-c', "alias "+alias], stdout=subprocess.PIPE)
-    out, err = process.communicate()
-    out = out.decode()
-    pieces = out.strip("\n").strip("alias "+alias+"=").strip("'").strip("cd ").split("/")
+def get_sid():
+    SID = run_command('echo $SAPSYSTEMNAME').upper()
+    return SID
+
+def cdalias(alias, local_dbinstance):   # alias e.g. cdtrace, cdhdb, ...
+    su_cmd = ''
+    whoami = run_command('whoami').replace('\n','')
+    if whoami.lower() == 'root':
+        sidadm = get_sid().lower()+'adm'
+        su_cmd = 'su - '+sidadm+' '
+    alias_cmd = su_cmd+'/bin/bash -l -c \'alias '+alias+'\'|tail -1'   #tail -1 to remove other messages from e.g. profile.local
+    command_run = run_command(alias_cmd)
+    pieces = re.sub(r'.*cd ','',command_run).strip("\n").strip("'").split("/")    #to remove ANSI escape codes (only needed in few systems)
     path = ''
     for piece in pieces:
-        if piece[0] == '$':
-            #piece = (subprocess.check_output(['/bin/bash', '-i', '-c', "echo "+piece])).strip("\n")
-            process = subprocess.Popen(['/bin/bash', '-i', '-c', "echo "+piece], stdout=subprocess.PIPE)
-            out, err = process.communicate()
-            out = out.decode().strip("\n")
+        if piece and piece[0] == '$':
+            piece_cmd = su_cmd+'/bin/bash -l -c'+" \' echo "+piece+'\'|tail -1'   #tail -1 to remove other messages from e.g. profile.local
+            piece = run_command(piece_cmd)
         path = path + '/' + piece + '/' 
-    return path       
+    path = path.replace("[0-9][0-9]", local_dbinstance) # if /bin/bash shows strange HDB[0-9][0-9] we force correct instance on it
+    return path
         
 def checkUserKey(dbuserkey, virtual_local_host, logman, error_emails):
     try: 
@@ -373,7 +386,7 @@ def get_check_number(checkString):
         
 def checkIfAcceptedFlag(word):
     if not is_check_id(word.strip('-')):
-        if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-se", "-ee", "-is", "-at", "-abs", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-ct", "-ff", "-od", "-or", "-so", "-oc", "-enc", "-ens", "-enm", "-en", "-hci", "-ssl", "-k", "-dbs"]:
+        if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-se", "-ee", "-is", "-at", "-abs", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-ct", "-ff", "-od", "-or", "-so", "-oc", "-enc", "-ens", "-enm", "-en", "-hci", "-ssl", "-oi", "-k", "-dbs"]:
             print("INPUT ERROR: ", word, " is not one of the accepted input flags. Please see --help for more information.")
             os._exit(1)
 
@@ -681,6 +694,76 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                             old_description = line[2] if line[2] else old_description    
     return [critical_mini_checks, critical_parameter_checks, sqls_with_recommendation]
     
+def is_master(local_dbinstance, local_host, logman):
+    process = subprocess.Popen(['python', cdalias('cdpy', local_dbinstance)+"/landscapeHostConfiguration.py"], stdout=subprocess.PIPE)
+    out, err = process.communicate()
+    out = out.decode()
+    out_lines = out.splitlines(1)
+    host_line = [line for line in out_lines if local_host in line or local_host.upper() in line or local_host.lower() in line]  #have not tested this with virtual and -vlh yet
+    if len(host_line) != 1:
+        print_out = "ERROR: Something went wrong. It found more than one (or none) host line" + " \n ".join(host_line)
+        log(print_out, logman, True)
+        os._exit(1)
+    nameserver_actual_role = host_line[0].strip('\n').split('|')[11].strip(' ')
+    test_ok = (str(err) == "None")
+    result = nameserver_actual_role == 'master'
+    printout = "Master Check      , "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+"    ,     -            , "+str(test_ok)+"         , "+str(result)+"       , Nameserver actual role = "+nameserver_actual_role
+    log(printout, logman)
+    return result
+
+def is_online(dbinstance, logman): #Checks if all services are GREEN and if there exists an indexserver (if not this is a Stand-By) 
+    process = subprocess.Popen(['sapcontrol', '-nr', dbinstance, '-function', 'GetProcessList'], stdout=subprocess.PIPE)
+    out, err = process.communicate()
+    out = out.decode()
+    number_services = out.count(" HDB ") + out.count(" Local Secure Store")   
+    number_running_services = out.count("GREEN")
+    number_indexservers = int(out.count("hdbindexserver")) # if not indexserver this is Stand-By
+    test_ok = (str(err) == "None")
+    result = (number_running_services == number_services) and (number_indexservers != 0)
+    printout = "Online Check      , "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+"    ,     -            , "+str(test_ok)+"         , "+str(result)+"       , # index services: "+str(number_indexservers)+", # running services: "+str(number_running_services)+" out of "+str(number_services)
+    log(printout, logman)
+    return result
+    
+def is_secondary(logman):
+    process = subprocess.Popen(['hdbnsutil', '-sr_state'], stdout=subprocess.PIPE)
+    out, err = process.communicate() 
+    out = out.decode()
+    test_ok = (str(err) == "None")
+    result = "active primary site" in out   # then it is secondary!
+    printout = "Primary Check     , "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+"    ,     -            , "+str(test_ok)+"         , "+str(not result)+"       , " 
+    log(printout, logman)
+    return result 
+
+def online_and_master_tests(online_test_interval, local_dbinstance, local_host, logman):
+    if online_test_interval < 0: #then dont test
+        return True
+    else:
+        if is_online(local_dbinstance, logman) and not is_secondary(logman): 
+            return is_master(local_dbinstance, local_host, logman)  #HANACleaner should only run on the Master Node
+        else:
+            return False
+
+def get_key_info(dbuserkey, local_host, logman):
+    try:
+        key_environment = run_command('''hdbuserstore LIST '''+dbuserkey) 
+    except:
+        log("ERROR, the key "+dbuserkey+" is not maintained in hdbuserstore.", logman, True)
+        os._exit(1)
+    if "NOT FOUND" in key_environment:
+        log("ERROR, the key "+dbuserkey+" is not maintained in hdbuserstore.", logman, True)
+        os._exit(1)
+    key_environment = key_environment.split('\n')
+    key_environment = [ke for ke in key_environment if ke and not ke == 'Operation succeed.']
+    ENV = key_environment[1].replace('  ENV : ','').replace(';',',').split(',')
+    key_hosts = [env.split(':')[0].split('.')[0] for env in ENV]  #if full host name is specified in the Key, only the first part is used
+    DATABASE = ''
+    if len(key_environment) == 4:   # if DATABASE is specified in the key, this will by used in the SQLManager (but if -dbs is specified, -dbs wins)
+        DATABASE = key_environment[3].replace('  DATABASE: ','').replace(' ', '')
+    if not local_host in key_hosts:
+        print("ERROR, local host, ", local_host, ", should be one of the hosts specified for the key, ", dbuserkey, " (in case of virtual, please use -vlh, see --help for more info)")
+        os._exit(1)
+    return  [key_hosts, ENV, DATABASE]
+
 def ping_db(sqlman, logman, error_emails):
     with open(os.devnull, 'w') as devnull:  # just to get no stdout in case HANA is offline
         try:
@@ -692,7 +775,7 @@ def ping_db(sqlman, logman, error_emails):
                 log_with_emails(message, logman, error_emails)
                 os._exit(1)
         except:
-            message = "CONNECTION ERROR: Something went wrong connecting to the database "+sqlman.db+" with user "+sqlman.key+".\n"
+            message = "CONNECTION ERROR: Something went wrong connecting to the database "+sqlman.db+" with user "+sqlman.key+". Check the key and/or possibility you want to use -oi.\n"
             log_with_emails(message, logman, error_emails)
             os._exit(1)
 
@@ -827,6 +910,7 @@ def main():
                                # KEY SYSTEMKEY
                                #     ENV : mo-fc8d991e0:30015
                                #     USER: SYSTEM
+    online_test_interval = "-1" #days
     dbases = ['']
     std_out = "1" #print to std out
     out_config = "false"
@@ -894,6 +978,7 @@ def main():
                     always_send                         = getParameterFromFile(firstWord, '-as', flagValue, flag_file, flag_log, always_send)
                     ssl                                 = getParameterFromFile(firstWord, '-ssl', flagValue, flag_file, flag_log, ssl)
                     virtual_local_host                  = getParameterFromFile(firstWord, '-vlh', flagValue, flag_file, flag_log, virtual_local_host)
+                    online_test_interval                = getParameterFromFile(firstWord, '-oi', flagValue, flag_file, flag_log, online_test_interval)
                     dbuserkeys                          = getParameterListFromFile(firstWord, '-k', flagValue, flag_file, flag_log, dbuserkeys)
                     std_out                             = getParameterFromFile(firstWord, '-so', flagValue, flag_file, flag_log, std_out)
                     out_config                          = getParameterFromFile(firstWord, '-oc', flagValue, flag_file, flag_log, out_config)
@@ -937,6 +1022,7 @@ def main():
     always_send                         = getParameterFromCommandLine(sys.argv, '-as', flag_log, always_send)
     ssl                                 = getParameterFromCommandLine(sys.argv, '-ssl', flag_log, ssl)
     virtual_local_host                  = getParameterFromCommandLine(sys.argv, '-vlh', flag_log, virtual_local_host)
+    online_test_interval                = getParameterFromCommandLine(sys.argv, '-oi', flag_log, online_test_interval)
     dbuserkeys                          = getParameterListFromCommandLine(sys.argv, '-k', flag_log, dbuserkeys)
     std_out                             = getParameterFromCommandLine(sys.argv, '-so', flag_log, std_out)
     out_config                          = getParameterFromCommandLine(sys.argv, '-oc', flag_log, out_config)
@@ -1140,6 +1226,11 @@ def main():
                 print("INPUT ERROR: -ee must be in the format email,email,email and so on. Please see --help for more information.")
                 os._exit(1)     
     error_emails.extend(catch_all_emails)         # catch-all-emails also catch the most important HANAChecker errors
+    ### online_test_interval, -oi
+    if not is_integer(online_test_interval):
+        log("INPUT ERROR: -oi must be an integer. Please see --help for more information.", logman, True)
+        os._exit(1)
+    online_test_interval = int(online_test_interval)
     ### dbases, -dbs, and dbuserkeys, -k
     if len(dbases) > 1 and len(dbuserkeys) > 1:
         message = "INPUT ERROR: -k may only specify one key if -dbs is used. Please see --help for more information."
@@ -1155,6 +1246,36 @@ def main():
                 ############# SQL and LOG MANAGER and CHECK DB CONNECTION ##############
                 sqlman = SQLManager(hdbsql_string, dbuserkey, dbase)
                 logman.db = dbase
+                ############ ONLINE TESTS (OPTIONAL) ##########################
+                if online_test_interval >= 0:
+                    ############ GET LOCAL HOST ##########
+                    local_host = run_command("hostname").replace('\n','') if virtual_local_host == "" else virtual_local_host 
+                    local_host = local_host.replace(' ', '')  
+                    if not is_integer(local_host.split('.')[0]):    #first check that it is not an IP address
+                        local_host = local_host.split('.')[0]  #if full host name is specified in the local host (or virtual host), only the first part is used
+                    ############ GET LOCAL INSTANCE and SID ##########
+                    [key_hosts, ENV, DATABASE] = get_key_info(dbuserkey, local_host, logman)
+                    local_host_index = key_hosts.index(local_host)
+                    key_sqlports = [env.split(':')[1] for env in ENV]        
+                    dbinstances = [port[1:3] for port in key_sqlports]
+                    if not all(x == dbinstances[0] for x in dbinstances):
+                        print("ERROR: The hosts provided with the user key, "+dbuserkey+", does not all have the same instance number")
+                        os._exit(1)
+                    local_dbinstance = dbinstances[local_host_index]
+                    while not online_and_master_tests(online_test_interval, local_dbinstance, local_host, logman):  #will check if Online and if Primary and not Stand-By, and then if Master, but only if online_test_interval > -1           
+                        log("\nOne of the online checks found out that this HANA instance, "+str(local_dbinstance)+", is not online or not master. ", logman)
+                        ############ CLEANUP of OWN LOGS, HANACHECKER MUST DO even though HANA is OFFLINE ##########################
+                        if minRetainedOutputDays >= 0:
+                            nCleaned = clean_output(minRetainedOutputDays, sqlman, logman)
+                            message = str(nCleaned)+" hanachecker log files were removed (based on the flag -or) even though HANA is offline"
+                            log(message, logman)
+                        if online_test_interval == 0:
+                            log("HANAChecker will now abort since online_test_interval = 0.", logman, True)
+                            os._exit(1)
+                        else:
+                            log("HANAChecker will now have a "+str(online_test_interval)+" days break and check again if this Instance is online, or master, after the break.\n", logman)
+                            time.sleep(float(online_test_interval*24*3600))  # wait online_test_interval DAYS before again checking if HANA is running
+                ############ PING TEST ##########################
                 ping_db(sqlman, logman, error_emails)
                 ########## GET MINICHECK FILES FROM -ct if not -mf specified ##############
                 if check_types:        

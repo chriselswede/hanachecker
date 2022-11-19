@@ -522,12 +522,12 @@ def getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision, active
         elif ct == 'P':
             check_files.append(getFileVersion('HANA_Configuration_Parameters', tmp_sql_dir, version, revision, mrevision))
         elif ct == 'C':
-            revision_number_str = get_revision_number_str(version, revision)
+            revision_number_str = get_revision_number_str(version, revision, mrevision)
             if int(revision_number_str) < 200040:
                 print("COMPATIBILITY ERRROR: There are no Call Stack Mini-Checks for your SAP HANA revision, so you cannot use -ct C")
                 os._exit(1)
             if active_threads:  # then must change modification section
-                cs_mc_file = getFileVersion('HANA_Threads_Callstacks_MiniChecks', tmp_sql_dir, version, revision).strip('\n')
+                cs_mc_file = getFileVersion('HANA_Threads_Callstacks_MiniChecks', tmp_sql_dir, version, revision, mrevision).strip('\n')
                 cs_mc_file_temp = tmp_sql_dir+"HANA_Threads_Callstacks_MiniChecks_Temp.txt"
                 fin = open(cs_mc_file, "rt")
                 fout = open(cs_mc_file_temp, "wt") # will be removed when tmp_sql_dir is removed 
@@ -537,11 +537,11 @@ def getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision, active
                 fout.close()
                 check_files.append(cs_mc_file_temp)
             else:
-                check_files.append(getFileVersion('HANA_Threads_Callstacks_MiniChecks', tmp_sql_dir, version, revision))
+                check_files.append(getFileVersion('HANA_Threads_Callstacks_MiniChecks', tmp_sql_dir, version, revision, mrevision))
         elif ct == 'R':
-            check_files.append(getFileVersion('HANA_SQL_SQLCache_TopLists', tmp_sql_dir, version, revision))
+            check_files.append(getFileVersion('HANA_SQL_SQLCache_TopLists', tmp_sql_dir, version, revision, mrevision))
         elif ct == 'A':
-            abap_mc_file = getFileVersion('HANA_ABAP_MiniChecks', tmp_sql_dir, version, revision).strip('\n')
+            abap_mc_file = getFileVersion('HANA_ABAP_MiniChecks', tmp_sql_dir, version, revision, mrevision).strip('\n')
             abap_mc_file_temp = tmp_sql_dir+"HANA_ABAP_MiniChecks_Temp.txt"
             fin = open(abap_mc_file, "rt")
             fout = open(abap_mc_file_temp, "wt") # will be removed when tmp_sql_dir is removed

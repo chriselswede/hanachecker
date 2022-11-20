@@ -47,6 +47,9 @@ def printHelp():
     print("                                        SQL recommendations, and ABAP would be executed)                                                            ")
     print(" -ff     flag file(s), a comma seperated list of full paths to files that contain input flags, each flag in a new line, all lines in the file that  ")
     print("         do not start with a flag (a minus) are considered comments,                                                    default: '' (not used)      ")
+    print("         *** CLOUD ***                                                                                                                              ")
+    print(" -cdb    cloud data base, if a HANACloud database name is specified, HANAChecker assumes the key (-k) is pointing to a HANACloud instance,          ")
+    print("         default: '' (HANAChecker assumes the key (-k) points to the on-prem HANA instance of the current server)                                   ")
     print("         *** OUTPUT ***                                                                                                                             ")
     print(" -od     output directory, full path of the folder where the log files will end up (if not exist it will be created),                               ")
     print("         default: '/tmp/hanachecker_output'                                                                                                         ")
@@ -330,8 +333,8 @@ def cdalias(alias, local_dbinstance):   # alias e.g. cdtrace, cdhdb, ...
     path = path.replace("[0-9][0-9]", local_dbinstance) # if /bin/bash shows strange HDB[0-9][0-9] we force correct instance on it
     return path
         
-def checkUserKey(dbuserkey, virtual_local_host, logman, error_emails):
-    try: 
+def checkUserKey(dbuserkey, virtual_local_host, cloud_data_base, logman, error_emails):
+    try:                 #check if key exists
         key_environment = run_command('''hdbuserstore LIST '''+dbuserkey)
         if "NOT FOUND" in key_environment:
             message = "ERROR, the key "+dbuserkey+" is not maintained in hdbuserstore."
@@ -341,16 +344,21 @@ def checkUserKey(dbuserkey, virtual_local_host, logman, error_emails):
         message = "ERROR, the key "+dbuserkey+" is not maintained in hdbuserstore."
         log_with_emails(message, logman, error_emails)
         os._exit(1)
-    local_host = run_command("hostname").replace('\n','') if virtual_local_host == "" else virtual_local_host
-    if not is_integer(local_host.split('.')[0]):    #first check that it is not an IP address
-        local_host = local_host.split('.')[0]  #if full host name is specified in the local host (or virtual host), only the first part is used
-    ENV = key_environment.split('\n')[1].replace('  ENV : ','').split(',')
-    #key_hosts = [env.split(':')[0] for env in ENV]
-    key_hosts = [env.split(':')[0].split('.')[0] for env in ENV]  #if full host name is specified in the Key, only the first part is used
-    if not local_host in key_hosts:
-        message = "ERROR, local host, "+local_host+", should be one of the hosts specified for the key, "+dbuserkey+" (in case of virtual, please use -vlh, see --help for more info)"
-        log_with_emails(message, logman, error_emails)
-        os._exit(1)    
+    if cloud_data_base:   #if cloud, only need to check that DATABASE: is not in key
+        if "DATABASE:" in key_environment:
+            message = "KEY ERROR: if -cdb is used, they key may not contain the DATABASE. Please recreate the key without @<DATABASE>."
+            log_with_emails(message, logman, error_emails)
+            os._exit(1)
+    else:                 #if on-prem, also check if key is according to local host, i.e. "hostname"
+        ENV = key_environment.split('\n')[1].replace('  ENV : ','').split(',')
+        key_hosts = [env.split(':')[0].split('.')[0] for env in ENV]  #if full host name is specified in the Key, only the first part is used
+        local_host = run_command("hostname").replace('\n','') if virtual_local_host == "" else virtual_local_host
+        if not is_integer(local_host.split('.')[0]):    #first check that it is not an IP address
+            local_host = local_host.split('.')[0]  #if full host name is specified in the local host (or virtual host), only the first part is used
+        if not local_host in key_hosts:
+            message = "ERROR, local host, "+local_host+", should be one of the hosts specified for the key, "+dbuserkey+" (in case of virtual, please use -vlh, see --help for more info)"
+            log_with_emails(message, logman, error_emails)
+            os._exit(1)    
     
 def checkAndConvertBooleanFlag(boolean, flagstring):     
     boolean = boolean.lower()
@@ -386,7 +394,7 @@ def get_check_number(checkString):
         
 def checkIfAcceptedFlag(word):
     if not is_check_id(word.strip('-')):
-        if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-se", "-ee", "-is", "-at", "-abs", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-ct", "-ff", "-od", "-or", "-so", "-oc", "-enc", "-ens", "-enm", "-en", "-hci", "-ssl", "-oi", "-k", "-dbs"]:
+        if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-se", "-ee", "-is", "-at", "-abs", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-ct", "-ff", "-cdb", "-od", "-or", "-so", "-oc", "-enc", "-ens", "-enm", "-en", "-hci", "-ssl", "-oi", "-k", "-dbs"]:
             print("INPUT ERROR: ", word, " is not one of the accepted input flags. Please see --help for more information.")
             os._exit(1)
 
@@ -491,22 +499,38 @@ def get_revision_number_str(version, revision, mrevision):
         
 def getFileVersion(base_file_name, tmp_sql_dir, version, revision, mrevision):
     revision_number_str = get_revision_number_str(version, revision, mrevision)
-    try:
-        output = run_command('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt', True)   #[12] removes SHC
-    except Exception as e:
-        output = str(e.output)
-    output = output.splitlines(1)
-    files = [f.strip('\n') for f in output if not 'cannot access' in f]
-    if len(files) == 0:
-        print("ERROR: There were no on-premise files found with name "+base_file_name+", files = ", files)
-        os._exit(1)
-    chosen_file_name = files[0] 
-    for file_name in files:
-        file_revision_number_str = get_file_revision_number_str(file_name, base_file_name, tmp_sql_dir)
-        choosen_file_revision_number_str = get_file_revision_number_str(chosen_file_name, base_file_name, tmp_sql_dir)
-        if int(file_revision_number_str) <= int(revision_number_str) and int(file_revision_number_str) > int(choosen_file_revision_number_str):
-            chosen_file_name = file_name
-    return chosen_file_name
+    if int(revision_number_str) >= 40000000:   #then, cloud
+        try:
+            output = run_command('ls '+tmp_sql_dir+base_file_name+'*SHC*', True)
+        except Exception as e:
+            output = str(e.output)
+        output = output.splitlines(1)
+        files = [f.strip('\n') for f in output if not 'cannot access' in f]
+        if len(files) == 0:
+            print("ERROR: There were no SHC files found with name "+base_file_name+", so please modify -ct")
+            os._exit(1)
+        if len(files) > 1:
+            print("COMPATIBILITY ERROR: There were are now multiple SHC files found with name "+base_file_name+", files = ", files)
+            print("This needs to be fixed in hanachecker.py so please let christian.hansen01@sap.com know, thanks!")
+            os._exit(1)
+        return files[0]
+    else:                                       #then, on-prem
+        try:
+            output = run_command('ls '+tmp_sql_dir+base_file_name+'_[12]* '+tmp_sql_dir+base_file_name+'.txt', True)   #[12] removes SHC
+        except Exception as e:
+            output = str(e.output)
+        output = output.splitlines(1)
+        files = [f.strip('\n') for f in output if not 'cannot access' in f]
+        if len(files) == 0:
+            print("ERROR: There were no on-premise files found with name "+base_file_name+", files = ", files)
+            os._exit(1)
+        chosen_file_name = files[0] 
+        for file_name in files:
+            file_revision_number_str = get_file_revision_number_str(file_name, base_file_name, tmp_sql_dir)
+            choosen_file_revision_number_str = get_file_revision_number_str(chosen_file_name, base_file_name, tmp_sql_dir)
+            if int(file_revision_number_str) <= int(revision_number_str) and int(file_revision_number_str) > int(choosen_file_revision_number_str):
+                chosen_file_name = file_name
+        return chosen_file_name
 
 def getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision, active_threads, abap_schema):
     check_files = []
@@ -694,7 +718,7 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                             old_description = line[2] if line[2] else old_description    
     return [critical_mini_checks, critical_parameter_checks, sqls_with_recommendation]
     
-def is_master(local_dbinstance, local_host, logman):
+def is_master(local_dbinstance, local_host, logman):   #will not be executed in case of HANACloud
     process = subprocess.Popen(['python', cdalias('cdpy', local_dbinstance)+"/landscapeHostConfiguration.py"], stdout=subprocess.PIPE)
     out, err = process.communicate()
     out = out.decode()
@@ -724,7 +748,7 @@ def is_online(dbinstance, logman): #Checks if all services are GREEN and if ther
     log(printout, logman)
     return result
     
-def is_secondary(logman):
+def is_secondary(logman):    #will not be executed in case of HANACloud
     process = subprocess.Popen(['hdbnsutil', '-sr_state'], stdout=subprocess.PIPE)
     out, err = process.communicate() 
     out = out.decode()
@@ -734,8 +758,8 @@ def is_secondary(logman):
     log(printout, logman)
     return result 
 
-def online_and_master_tests(online_test_interval, local_dbinstance, local_host, logman):
-    if online_test_interval < 0: #then dont test
+def online_and_master_tests(online_test_interval, local_dbinstance, local_host, logman):   
+    if online_test_interval < 0: #then dont test                    #in case of HANACloud this parameter is forced to be -1
         return True
     else:
         if is_online(local_dbinstance, logman) and not is_secondary(logman): 
@@ -839,7 +863,7 @@ def sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, on
                 for email in emails:
                     if email not in unique_emails:
                         unique_emails.append(email)
-        always_send_message = "HANAChecker was executed "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+parameter_string+" on "+dbstring+logman.SID+" with \n"+execution_string+"\nIf any of the mini and/or parameter checks from following check files:"
+        always_send_message = "HANAChecker was executed "+datetime.now().strftime("%Y-%m-%d %H:%M:%S")+parameter_string+" on "+dbstring+logman.SID+" with \n"+execution_string+".\nIf any of the mini and/or parameter checks from following check files:"
         always_send_message += ",".join(check_files)
         always_send_message += "\nthat you are responsible for seem critical, you will be notified now.\n"
         for email in unique_emails:
@@ -912,6 +936,7 @@ def main():
                                #     USER: SYSTEM
     online_test_interval = "-1" #days
     dbases = ['']
+    cloud_data_base = ''
     std_out = "1" #print to std out
     out_config = "false"
     out_dir = "/tmp/hanachecker_output"
@@ -980,6 +1005,7 @@ def main():
                     virtual_local_host                  = getParameterFromFile(firstWord, '-vlh', flagValue, flag_file, flag_log, virtual_local_host)
                     online_test_interval                = getParameterFromFile(firstWord, '-oi', flagValue, flag_file, flag_log, online_test_interval)
                     dbuserkeys                          = getParameterListFromFile(firstWord, '-k', flagValue, flag_file, flag_log, dbuserkeys)
+                    cloud_data_base                     = getParameterFromFile(firstWord, '-cdb', flagValue, flag_file, flag_log, cloud_data_base)
                     std_out                             = getParameterFromFile(firstWord, '-so', flagValue, flag_file, flag_log, std_out)
                     out_config                          = getParameterFromFile(firstWord, '-oc', flagValue, flag_file, flag_log, out_config)
                     out_dir                             = getParameterFromFile(firstWord, '-od', flagValue, flag_file, flag_log, out_dir)
@@ -1024,6 +1050,7 @@ def main():
     virtual_local_host                  = getParameterFromCommandLine(sys.argv, '-vlh', flag_log, virtual_local_host)
     online_test_interval                = getParameterFromCommandLine(sys.argv, '-oi', flag_log, online_test_interval)
     dbuserkeys                          = getParameterListFromCommandLine(sys.argv, '-k', flag_log, dbuserkeys)
+    cloud_data_base                     = getParameterFromCommandLine(sys.argv, '-cdb', flag_log, cloud_data_base)
     std_out                             = getParameterFromCommandLine(sys.argv, '-so', flag_log, std_out)
     out_config                          = getParameterFromCommandLine(sys.argv, '-oc', flag_log, out_config)
     out_dir                             = getParameterFromCommandLine(sys.argv, '-od', flag_log, out_dir)
@@ -1047,7 +1074,7 @@ def main():
     dbases                              = getParameterListFromCommandLine(sys.argv, '-dbs', flag_log, dbases)
 
     ##### SYSTEM ID #############        
-    SID = run_command('whoami').replace('\n','').replace('adm','').upper()
+    SID = run_command('whoami').replace('\n','').replace('adm','').upper() if not cloud_data_base else cloud_data_base
               
     ############# OUTPUT DIRECTORY #########
     out_dir = out_dir.replace(" ","_").replace(".","_")
@@ -1114,22 +1141,17 @@ def main():
     ignore_dublicated_parameter = checkAndConvertBooleanFlag(ignore_dublicated_parameter, "-ip")
     ### always_send, -as
     always_send = checkAndConvertBooleanFlag(always_send, "-as")
-    ### ssl, -ssl
-    ssl = checkAndConvertBooleanFlag(ssl, "-ssl")
-    hdbsql_string = "hdbsql "
-    if ssl:
-        hdbsql_string = "hdbsql -e -ssltrustcert -sslcreatecert "
     ### check_files, -mf
     if not check_files and not zip_file:
         print("INPUT ERROR: Either -mf or -zf has to be specified. Please see --help for more information.")
         os._exit(1)
     ### zip_file, -zf
     if zip_file and not check_types:
-        print("INPUT ERROR: If -zf is specified also -ct has to be specified. Please see --help for more information.")
+        print("INPUT ERROR: If -zf is specified also -ct must be specified. Please see --help for more information.")
         os._exit(1)
     ### check_types, -ct
     if check_types and not zip_file:
-        print("INPUT ERROR: If -ct is specified also -zf has to be specified. Please see --help for more information.")
+        print("INPUT ERROR: If -ct is specified also -zf must be specified. Please see --help for more information.")
         os._exit(1)
     if check_types:
         for ct in check_types:
@@ -1236,17 +1258,37 @@ def main():
         message = "INPUT ERROR: -k may only specify one key if -dbs is used. Please see --help for more information."
         log_with_emails(message, logman, error_emails)
         os._exit(1)
+    ### cloud_data_base, -cdb
+    if cloud_data_base:   #then online checks should not be done, can only be used on one db, -ssl and -vlh will be automatically used
+        if online_test_interval >= 0:
+            message = "INPUT ERROR: -oi may not be used if -cdb is used. Please see --help for more information."
+            log_with_emails(message, logman, error_emails)
+            os._exit(1)
+        if len(dbases) > 1 or len(dbuserkeys) > 1:
+            message = "INPUT ERROR: -dbs may not be used, and -k can only be singular if -cdb is used (for now...). Please see --help for more information."
+            log_with_emails(message, logman, error_emails)
+            os._exit(1)
+        if virtual_local_host:
+            message = "INPUT ERROR: -vlh is useless if -cdb is used. Please see --help for more information."
+            log_with_emails(message, logman, error_emails)
+            os._exit(1)
+        ssl = "true"
+    ### ssl, -ssl
+    ssl = checkAndConvertBooleanFlag(ssl, "-ssl")
+    hdbsql_string = "hdbsql "
+    if ssl:
+        hdbsql_string = "hdbsql -e -ssltrustcert -sslcreatecert "
 
     ################ START #################
     while True: # hanachecker intervall loop
         for dbuserkey in dbuserkeys:
-            checkUserKey(dbuserkey, virtual_local_host, logman, error_emails)
+            checkUserKey(dbuserkey, virtual_local_host, cloud_data_base, logman, error_emails)
             ############# MULTIPLE DATABASES #######
             for dbase in dbases:
                 ############# SQL and LOG MANAGER and CHECK DB CONNECTION ##############
                 sqlman = SQLManager(hdbsql_string, dbuserkey, dbase)
-                logman.db = dbase
-                ############ ONLINE TESTS (OPTIONAL) ##########################
+                logman.db = dbase if not cloud_data_base else cloud_data_base
+                ############ ONLINE TESTS (OPTIONAL, and will never be used in case of cloud, -cdb) ##########################
                 if online_test_interval >= 0:
                     ############ GET LOCAL HOST ##########
                     local_host = run_command("hostname").replace('\n','') if virtual_local_host == "" else virtual_local_host 
@@ -1277,7 +1319,7 @@ def main():
                             time.sleep(float(online_test_interval*24*3600))  # wait online_test_interval DAYS before again checking if HANA is running
                 ############ PING TEST ##########################
                 ping_db(sqlman, logman, error_emails)
-                ########## GET MINICHECK FILES FROM -ct if not -mf specified ##############
+                ########## GET MINICHECK FILES FROM -ct if -mf is not specified ##############
                 if check_types:        
                     tmp_sql_dir = "./tmp_sql_statements/"
                     try:

@@ -1080,9 +1080,6 @@ def main():
     out_dir = out_dir.replace(" ","_").replace(".","_")
     if out_dir and not os.path.exists(out_dir):
         os.makedirs(out_dir)
- 
-    ############# LOG MANAGER ###########
-    logman = LogManager(std_out, out_dir, SID)
 
     ############ CHECK AND CONVERT INPUT PARAMETERS ################ 
     execution_string = " ".join(sys.argv)
@@ -1090,7 +1087,9 @@ def main():
     if not is_integer(std_out):
         log("INPUT ERROR: -so must be an integer. Please see --help for more information.", logman)
         os._exit(1)
-    std_out = int(std_out) 
+    std_out = int(std_out)
+    ############# LOG MANAGER ###########
+    logman = LogManager(std_out, out_dir, SID) 
     ### out_config, -oc
     out_config = checkAndConvertBooleanFlag(out_config, "-oc")
     ### email_client, -enc

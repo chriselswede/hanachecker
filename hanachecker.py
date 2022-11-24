@@ -1093,7 +1093,7 @@ def main():
     ### out_config, -oc
     out_config = checkAndConvertBooleanFlag(out_config, "-oc")
     ### email_client, -enc
-    if email_client:  # allow to be empty --> no emails are sent --> HANAChecker just used to write critical mini-checks in the log file, with e.g. -ca dummy@dum.com
+    if email_client:  
         if email_client not in ['mailx', 'mail', 'mutt']:
             print("INPUT WARNING: The -enc flag does not specify any of the email clients mailx, mail, or mutt. If you are using an email client that can send emails with the command ")
             print('               <message> | <client> -s "<subject>" \n please let me know.')
@@ -1112,7 +1112,7 @@ def main():
     if mail_server:
         logman.emailSender.mailServer = mail_server
     ### email_sender (DEPRICATED!), -en
-    if email_sender:  # allow to be empty --> no emails are sent --> HANAChecker just used to write critical mini-checks in the log file
+    if email_sender:  
         print("WARNING: The flag -en is DEPRICATED! See --help for more information.")
         if not len(email_sender) == 2:
             print("INPUT ERROR: -en requires 2 elements, seperated by a comma. Note: -en is depricated. Please see --help for more information.")
@@ -1222,8 +1222,8 @@ def main():
     ### catch_all_emails, -ca
     if len(catch_all_emails):
         for ca in catch_all_emails:
-            if not is_email(ca):
-                print("INPUT ERROR: -ca must be in the format email,email,email and so on. Please see --help for more information.")
+            if ca and not is_email(ca):  #this allows ca to be empty in case HANAChecker is used only to log potential critical issues
+                print("INPUT ERROR: -ca must be in the format <email>,<email>,'',<email> and so on. Please see --help for more information.")
                 os._exit(1)
         checkEmailDict = addCatchAllEmailsToDict(checkEmailDict, catch_all_emails, ignore_checks_for_ca)   
     ### parameter_emails, -pe

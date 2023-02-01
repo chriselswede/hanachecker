@@ -3,7 +3,6 @@ from datetime import datetime
 import sys, time, os, subprocess, re
 import zipfile
 
-
 def printHelp():
     print("                                                                                                                                                    ")    
     print("DESCRIPTION:                                                                                                                                        ")
@@ -118,6 +117,7 @@ def printDisclaimer():
 
 ############ GLOBAL VARIABLES ##############
 chidMax = 9999
+htmlSend = True
 
 ######################## DEFINE CLASSES ##################################
 
@@ -129,7 +129,7 @@ class EmailSender:
     def printEmailSender(self):
         print("Email Client: ", self.emailClient, "  Sender Email: ", self.senderEmail, "  Mail Server: ", self.mailServer) 
 
-class MiniCheck:
+class MiniCheck: # //@audit-info MiniCheck
     def __init__(self, CHID, Area, Description, Host, Port, Count, ActiveThreads, LastOccurrence, Value, Expectation, C, SAPNote, TraceText):
         self.CHID = CHID
         self.Type = get_check_type(CHID)
@@ -147,6 +147,12 @@ class MiniCheck:
         self.SAPNote = SAPNote
         self.TraceText = TraceText
     def summary(self):
+        if htmlSend:
+            return self.htmlSummary()
+        return self.minimalistSummary()
+    def htmlSummary(self):
+        return "<tr>"+"".join(["<td>{}</td>".format(v) for v in vars(self).values()])+"</tr>"
+    def minimalistSummary(self):
         sum = "\nMini Check ID "+str(self.CHID)
         if self.Area:
             sum += "  Area: "+self.Area
@@ -431,7 +437,7 @@ def clean_output(minRetainedOutputDays, sqlman, logman):
     return nFilesBefore - nFilesAfter  
 
 def log(message, logman, file_name = "", recieversEmail = ""):
-    logMessage = '"'+message+'"' 
+    logMessage = message if htmlSend else '"'+message+'"'
     if logman.emailSender:    
         logMessage = logMessage + " is sent to " + recieversEmail if recieversEmail else message
     if logman.std_out:
@@ -704,7 +710,7 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                             sap_note = line[9]
                             details = line[10]
                             critical_mini_checks.append(MiniCheck(checkId, area, description, host, port, count, act_thr, last_occurrence, '', '', potential_critical, sap_note, details))
-                        else: # M, I, S, A
+                        else: # M, I, S, A 
                             potential_critical = line[6] if checkType in ['M','I'] else line[5] #'M', 'I' column 6, but for 'S' and 'A' column 5
                             if potential_critical == 'X':
                                 checkId = line[1] if line[1] else old_checkId
@@ -713,6 +719,7 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                                 value = line[4] if checkType in ['M','I'] else line[3]
                                 expected_value = line[5] if checkType in ['M','I'] else line[4]
                                 sap_note = line[7] if checkType in ['M','I'] else line[6]
+                                #//@audit-info instantiate MiniCheck
                                 critical_mini_checks.append(MiniCheck(checkId, '', description, host, '', '', '', '', value, expected_value, potential_critical, sap_note, ''))
                             old_checkId = line[1] if line[1] else old_checkId
                             old_description = line[2] if line[2] else old_description    
@@ -874,13 +881,20 @@ def sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, on
         for email in sql_emails:
             if email not in unique_emails:
                 messages.update({email:[always_send_message]})
-    for check in critical_mini_checks:
+    for i, check in enumerate(critical_mini_checks): #//@audit-info compose messages
         if check.Number in list(checkEmailDict[check.Type].keys()):
             for email in checkEmailDict[check.Type][check.Number]:
                 if email in messages:
-                    messages[email].append(check.summary())
-                else:
-                    messages.update({email:[check.summary()]})
+                    if htmlSend and i == len(critical_mini_checks) - 1:
+                        messages[email].append("</table>")
+                    else:
+                        messages[email].append(check.summary())
+                else: # once per email message
+                    if htmlSend:
+                        messages.update({email:["<table><tr>"+"".join(["<th>"+e+"</th>" for e in vars(check).keys()])+"</tr>"]})
+                        messages[email].append(check.summary())
+                    else:
+                        messages.update({email:[check.summary()]})
     for check in critical_parameter_checks:
         for email in parameter_emails:
             if email in messages:
@@ -893,7 +907,7 @@ def sendEmails(critical_checks, checkEmailDict, parameter_emails, sql_emails, on
                 messages[email].append(sql.summary())
             else:
                 messages.update({email:[sql.summary()]})
-    for email, messages_for_email in messages.items():
+    for email, messages_for_email in messages.items(): #//@audit-info send messages
         if one_email:
             message = "\n".join(messages_for_email)
             log(message, logman, recieversEmail = email)
@@ -1330,6 +1344,7 @@ def main():
                     zip_ref.extractall(tmp_sql_dir) 
                     [version, revision, mrevision] = hana_version_rev_mrev(sqlman)
                     check_files = getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision, active_threads, abap_schema)
+                #//@audit-info execution code
                 ##### GET CRITICAL MINICHECKS FROM ALL MINI-CHECK FILES (either from -ct or -mf) ############
                 critical_checks = getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_parameter, ignore_checks, sqlman, logman)
                 ##### SEND EMAILS FOR ALL CRITICAL MINI-CHECKS THAT HAVE A CORRESPONDING EMAIL ADDRESS ######

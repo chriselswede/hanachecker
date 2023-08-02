@@ -1,0 +1,85 @@
+ An Example of a HANA CHECKER Configuration File: 
+#------------------------------------------------#
+
+The hdbuserstore key
+-k T1KEY
+
+The .zip file is located in the same directory 
+as hanachecker.py
+-zf SQLStatements.zip
+
+Will run the normal mini-checks and the 
+security mini-checks
+-ct M,S
+
+Recievers will only get one email per execution
+-oe true
+
+Recievers will always get one email per execution 
+(even if their checks were not critical)
+-as true
+
+Chris is responsible for HANA revisions and for 
+that everything is up running at "OurCompany, OC" 
+-cg M0001-M0199,christian.hansen01@sap.com
+
+Lena is responsible for the Operating System
+-cg M0200-M0299,christian.hansen01@sap.com 
+
+Ole is responsible for the Disk
+-cg M0300-M0399,christian.hansen01@sap.com
+
+Emma is the Memory expert
+-cg M0400-M0499,christian.hansen01@sap.com
+
+Per is responsible for the Tables
+-cg M0500-M0599,christian.hansen01@sap.com
+
+Cindy is responsible for Traces, Dumps and Logs
+-cg M0600-M0699,christian.hansen01@sap.com
+
+Clark makes sure that the Statistics Server, 
+and Transaction and Threads run smoothly
+-cg M0700-M0899,christian.hansen01@sap.com
+
+Loren is the Backup expert
+-cg M0900-M0999,christian.hansen01@sap.com
+
+Tom checks that all Locks and SQLs are OK
+-cg M1000-M1199,christian.hansen01@sap.com
+
+Jen takes care of the Applications
+-cg M1200-M1299,christian.hansen01@sap.com
+
+Tim is Security responsible
+-cg M1300-M1399,christian.hansen01@sap.com
+
+Mark handles the Network
+-cg M1500-M1599,christian.hansen01@sap.com
+
+John checks the XS Engine, and Nameserver
+-cg M1600-M1799,christian.hansen01@sap.com
+
+Michael is responsible for the System Replication 
+-cg M1800-M1899,christian.hansen01@sap.com
+
+Ann checks Objects, BW and Consistency
+-cg M1900-M2199,christian.hansen01@sap.com
+
+Oscar handles SDA/SDI
+-cg M2200-M2299,christian.hansen01@sap.com
+
+Administration is Chris' task, 
+and he also gets the rest
+-cg M2300-M3000,christian.hansen01@sap.com
+
+Tim is responsible for Security, so he checks 
+everything from the Security Minichecks
+-cg S0001-S2000,christian.hansen01@sap.com
+
+Gustav is the boss, so he wants to 
+see ALL Crital Checks
+-ca christian.hansen01@sap.com
+
+
+

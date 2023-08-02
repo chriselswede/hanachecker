@@ -1,0 +1,27 @@
+ An Example of a HANA CHECKER Configuration File: 
+#------------------------------------------------#
+
+The hdbuserstore key
+-k XSCSYSKEY
+
+The .zip file is located in the same directory 
+as hanachecker.py
+-zf SQLStatements.zip
+
+Will run the normal mini-checks and the 
+security mini-checks
+-ct M,S
+
+Recievers will only get one email per execution
+-oe true
+
+Recievers will always get one email per execution 
+(even if their checks were not critical)
+-as true
+
+Chris is the boss, so he wants to 
+see ALL Crital Checks
+-ca christian.hansen01@sap.com
+
+
+

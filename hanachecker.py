@@ -40,8 +40,10 @@ def printHelp():
     print(" -mf     full path(s) of a mini-check file(s)                                                                                                       ")
     print("         Example:  -mf /tmp/SQLStatements/HANA_Configuration_MiniChecks_1.00.102.01+.txt                                                            ")
     print("         Example:  -mf /tmp/SQLStatements/HANA_Configuration_MiniChecks_1.00.120+.txt,/tmp/SQLStatements/HANA_Security_MiniChecks.txt               ")
-    print(" -zf     full path to SQLStatement.zip (cannot be used together with -mf and must be used together with -ct), default '' (not used)                 ")
+    print(" -zf     full path to SQLStatement.zip (cannot be used together with -mf and -zff, and must be used together with -ct), default '' (not used)       ")
     print("         Example:  -zf SQLStatements.zip  (if the zip file is located in same directory as hanachecker.py)                                          ")
+    print(" -zff    full path to a folder with .zip files (cannot be used together with -mf and -zf, and must be used together with -ct), default '' (not used)")
+    print("         Example:  -zff zip_files  (if the folder with zip files is located in same directory as hanachecker.py)                                    ")
     print(" -ct     check types, specifies what types of mini-checks to executes (must be used together with -zf), default '' (not used)                       ")
     print("         Example:  -ct M,I,S,T,P,C,R,A (in this example all possible mini-check types; mini, internal, security, trace, parameter, call stacks,     ")
     print("                                        SQL recommendations, and ABAP would be executed)                                                            ")
@@ -394,7 +396,7 @@ def get_check_number(checkString):
         
 def checkIfAcceptedFlag(word):
     if not is_check_id(word.strip('-')):
-        if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-se", "-ee", "-is", "-at", "-abs", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-ct", "-ff", "-cdb", "-od", "-or", "-so", "-oc", "-enc", "-ens", "-enm", "-en", "-hci", "-ssl", "-oi", "-k", "-dbs"]:
+        if not word in ["-h", "--help", "-d", "--disclaimer", "-cg", "-pe", "-se", "-ee", "-is", "-at", "-abs", "-ip", "-oe", "-as", "-ca", "-ic", "-il", "-vlh", "-mf", "-zf", "-zff", "-ct", "-ff", "-cdb", "-od", "-or", "-so", "-oc", "-enc", "-ens", "-enm", "-en", "-hci", "-ssl", "-oi", "-k", "-dbs"]:
             print("INPUT ERROR: ", word, " is not one of the accepted input flags. Please see --help for more information.")
             os._exit(1)
 
@@ -531,6 +533,22 @@ def getFileVersion(base_file_name, tmp_sql_dir, version, revision, mrevision):
             if int(file_revision_number_str) <= int(revision_number_str) and int(file_revision_number_str) > int(choosen_file_revision_number_str):
                 chosen_file_name = file_name
         return chosen_file_name
+
+def getZipFiles(zip_file, zip_folder):
+    zip_files = []
+    if zip_file:
+        zip_files.append(zip_file)
+    else:
+        try:
+            output = run_command('ls '+zip_folder+'/*.zip', True)
+        except Exception as e:
+            output = str(e.output)
+        output = output.splitlines(1)
+        zip_files = [f.strip('\n') for f in output if not 'cannot access' in f]
+        if len(zip_files) == 0:
+            print("ERROR: There were no .zip files found in "+zip_folder)
+            os._exit(1)
+    return zip_files
 
 def getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision, active_threads, abap_schema):
     check_files = []
@@ -943,6 +961,7 @@ def main():
     flag_files = []     #default: no configuration input file
     check_files = None
     zip_file = None
+    zip_folder = None
     check_types = []
     checkEmailDict = {'M':{}, 'I':{}, 'S':{}, 'T':{}, 'C':{}, 'A':{}}  #mini, internal, security, trace, call stack, ABAP
     check_groups = []
@@ -1012,6 +1031,7 @@ def main():
                     minRetainedOutputDays               = getParameterFromFile(firstWord, '-or', flagValue, flag_file, flag_log, minRetainedOutputDays)
                     check_files                         = getParameterListFromFile(firstWord, '-mf', flagValue, flag_file, flag_log, check_files)
                     zip_file                            = getParameterFromFile(firstWord, '-zf', flagValue, flag_file, flag_log, zip_file)
+                    zip_folder                          = getParameterFromFile(firstWord, '-zff', flagValue, flag_file, flag_log, zip_folder)
                     check_types                         = getParameterListFromFile(firstWord, '-ct', flagValue, flag_file, flag_log, check_types)
                     for checkFlagType in ['M', 'I', 'S', 'T', 'C', 'A']: #mini, internal, security, trace, call stack, ABAP
                         for checkFlagNumber in range(1, chidMax):
@@ -1057,6 +1077,7 @@ def main():
     minRetainedOutputDays               = getParameterFromCommandLine(sys.argv, '-or', flag_log, minRetainedOutputDays)
     check_files                         = getParameterListFromCommandLine(sys.argv, '-mf', flag_log, check_files)
     zip_file                            = getParameterFromCommandLine(sys.argv, '-zf', flag_log, zip_file)
+    zip_folder                          = getParameterFromCommandLine(sys.argv, '-zff', flag_log, zip_folder)
     check_types                         = getParameterListFromCommandLine(sys.argv, '-ct', flag_log, check_types)
     for checkFlagType in ['M', 'I', 'S', 'T', 'C', 'A']: #mini, internal, security, trace, call stacks, ABAP
         for checkFlagNumber in range(1, chidMax):
@@ -1141,16 +1162,26 @@ def main():
     ### always_send, -as
     always_send = checkAndConvertBooleanFlag(always_send, "-as")
     ### check_files, -mf
-    if not check_files and not zip_file:
-        print("INPUT ERROR: Either -mf or -zf has to be specified. Please see --help for more information.")
+    if not check_files and not zip_file and not zip_folder:
+        print("INPUT ERROR: Either -mf or -zf or -zff have to be specified. Please see --help for more information.")
+        os._exit(1)
+    if check_files and (zip_file or zip_folder):
+        print("INPUT ERROR: If -mf is specified, -zf nor -zff are allowed to be specified. Please see --help for more information.")
         os._exit(1)
     ### zip_file, -zf
     if zip_file and not check_types:
         print("INPUT ERROR: If -zf is specified also -ct must be specified. Please see --help for more information.")
         os._exit(1)
+    if zip_file and zip_folder:
+        print("INPUT ERROR: It is not allowed to specify both -zf and -zff. Please see --help for more information.")
+        os._exit(1)
+    ### zip_folder, -zff
+    if zip_folder and not check_types:
+        print("INPUT ERROR: If -zff is specified also -ct must be specified. Please see --help for more information.")
+        os._exit(1)
     ### check_types, -ct
-    if check_types and not zip_file:
-        print("INPUT ERROR: If -ct is specified also -zf must be specified. Please see --help for more information.")
+    if check_types and not (zip_file or zip_folder):
+        print("INPUT ERROR: If -ct is specified also -zf or -zff must be specified. Please see --help for more information.")
         os._exit(1)
     if check_types:
         for ct in check_types:
@@ -1321,13 +1352,15 @@ def main():
                 ########## GET MINICHECK FILES FROM -ct if -mf is not specified ##############
                 if check_types:        
                     tmp_sql_dir = "./tmp_sql_statements/"
-                    try:
-                        zip_ref = zipfile.ZipFile(zip_file, 'r')
-                    except:
-                        message = "ERROR: The .zip file is corrupt. Test with e.g. \n python /usr/sap/<SID>/HDB00/exe/Python3/lib/python3.7/zipfile.py -t <zip file>"
-                        log_with_emails(message, logman, error_emails)
-                        os._exit(1)
-                    zip_ref.extractall(tmp_sql_dir) 
+                    zip_files = getZipFiles(zip_file, zip_folder)
+                    for zf in zip_files:
+                        try:
+                            zip_ref = zipfile.ZipFile(zf, 'r')
+                        except:
+                            message = "ERROR: The .zip file "+zf+" is corrupt. Test with e.g. \n python /usr/sap/<SID>/HDB00/exe/Python3/lib/python3.7/zipfile.py -t <zip file>"
+                            log_with_emails(message, logman, error_emails)
+                            os._exit(1)
+                        zip_ref.extractall(tmp_sql_dir) 
                     [version, revision, mrevision] = hana_version_rev_mrev(sqlman)
                     check_files = getCheckFiles(tmp_sql_dir, check_types, version, revision, mrevision, active_threads, abap_schema)
                 ##### GET CRITICAL MINICHECKS FROM ALL MINI-CHECK FILES (either from -ct or -mf) ############

@@ -60,7 +60,7 @@ def printHelp():
     print(" -oc     output configuration [true/false], logs, in the emails send out if -as is set, all parameters set by the flags and where the flags were    ")
     print("         set, i.e. what flag file(one of the files listed in -ff) or if it was set via a flag specified on the command line, default = false        ")
     print("         *** EMAIL ***                                                                                                                              ")
-    print("         Possibly there is no need for any -en* flag. This depends on the configuration of your email client. If you recieve en email from this     ")
+    print("         Possibly there is no need for any -en* flag. This depends on the configuration of your email client. If you recieve an email from this     ")
     print('                             echo "Text in email" | mailx -s "subject" <your email address>                                                         ')
     print("         then there is no need for any -en* flag. Contact your Linux expert for more information.                                                   ")
     print(" -enc    email client, for example mail, mailx, mutt, ...,                                       default: mailx                                     ")
@@ -179,7 +179,7 @@ class MiniCheck:
         print(self.summary())
         
 class ParameterCheck:
-    def __init__(self, IniFile, Section, Parameter, Priority, ConfiguredValue, RecommendedValue, SAPNote, ConfiguredLayer, Revision, Environment, CpuThreads, CpuFrequency, NumaNodes, GlobalAllocationLimit, SlaveNodes, LogVolumeSize):
+    def __init__(self, IniFile, Section, Parameter, Priority, ConfiguredValue, RecommendedValue, SAPNote, ConfiguredLayer, Revision, Environment, CpuThreads, CpuFrequency, NumaNodes, GlobalAllocationLimit, WorkerNodes, LogVolumeSize):
         self.IniFile = IniFile
         self.Section = Section
         self.Parameter = Parameter
@@ -194,7 +194,7 @@ class ParameterCheck:
         self.CpuFrequency = CpuFrequency
         self.NumaNodes = NumaNodes
         self.GlobalAllocationLimit = GlobalAllocationLimit
-        self.SlaveNodes = SlaveNodes
+        self.WorkerNodes = WorkerNodes
         self.LogVolumeSize = LogVolumeSize
     def summary(self):
         sum = "\nParameter '"+self.Parameter+"' in configuration file '"+self.IniFile+"' and in section '"+self.Section+"'"
@@ -223,8 +223,8 @@ class ParameterCheck:
             sum += "  NumaNodes: "+self.NumaNodes
         if self.GlobalAllocationLimit:
             sum += "  GlobalAllocationLimit: "+self.GlobalAllocationLimit
-        if self.SlaveNodes:
-            sum += "  SlaveNodes: "+self.SlaveNodes
+        if self.WorkerNodes:
+            sum += "  WorkerNodes: "+self.WorkerNodes
         if self.LogVolumeSize:
             sum += "  LogVolumeSize: "+self.LogVolumeSize
         return sum     
@@ -602,7 +602,7 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
     cpufrequency = ''
     numa_nodes = ''
     global_allocation_limit = ''
-    slave_nodes = ''
+    worker_nodes = ''
     log_volume_size = ''
     critical_mini_checks = []
     critical_parameter_checks = []
@@ -644,13 +644,13 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                         cpufrequency = line[2]
                     elif "NUMA nodes:" in line[1]:
                         numa_nodes = line[2]
-                    elif "GAL (GB):" in line[1]:
+                    elif "Alloc. lim. (GB):" in line[1]:
                         global_allocation_limit = line[2]
-                    elif "Slave_nodes" in line[1]:
-                        slave_nodes = line[2]
+                    elif "Worker nodes:" in line[1]:
+                        worker_nodes = line[2]
                     elif "Log volume size (GB):" in line[1]:
                         log_volume_size = line[2]
-                    elif line[9] and line[10]:    # if implementation and undo command exist then
+                    elif line[10] and line[11]:    # if implementation and undo command exist then (after column COMMENT was added)
                         if cputhreads == '0' or cpufrequency == '0' or numa_nodes == '?' or global_allocation_limit == '?' or log_volume_size == '?':
                             log("PRIVILEGE ERROR: The user represented by the key in the hdbuserstore has insufficient privileges.", logman)
                             log("Make sure he has sufficient privileges to read these:", logman)
@@ -661,16 +661,10 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                         section = line[2]
                         parameter = line[3]
                         priority = line[4]
-                        if "90+" in check_file:   #has a default value on position [5] that we will not take
-                            configuredvalue= line[6]
-                            recommendedvalue = line[7]
-                            sapnote = line[8]
-                            configuredlayer = line[9]
-                        else:
-                            configuredvalue= line[5]
-                            recommendedvalue = line[6]
-                            sapnote = line[7]
-                            configuredlayer = line[8]
+                        configuredvalue= line[5]
+                        recommendedvalue = line[6]
+                        sapnote = line[7]
+                        configuredlayer = line[8]
                         if not ignore_dublicated_parameter or not parameter_is_dublicate(inifile, section, parameter, configuredvalue, critical_parameter_checks):
                             if not ignore_check_why_set or not "-- check why set --" in recommendedvalue:                                                        
                                 if parameter in ['allocationlimit', 'statement_memory_limit', 'max_partitions_limited_by_locations']: 
@@ -682,7 +676,7 @@ def getCriticalChecks(check_files, ignore_check_why_set, ignore_dublicated_param
                                 elif parameter in ['logshipping_max_retention_size']:
                                     critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', log_volume_size))
                                 elif parameter in ['max_partitions']: 
-                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', global_allocation_limit, slave_nodes, ''))    
+                                    critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', global_allocation_limit, worker_nodes, ''))    
                                 else:    
                                     critical_parameter_checks.append(ParameterCheck(inifile, section, parameter, priority, configuredvalue, recommendedvalue, sapnote, configuredlayer, revision, environment, '', '', '', '', '', ''))
                 elif checkType == 'R':
@@ -781,7 +775,7 @@ def online_and_master_tests(online_test_interval, local_dbinstance, local_host, 
         return True
     else:
         if is_online(local_dbinstance, logman) and not is_secondary(logman): 
-            return is_master(local_dbinstance, local_host, logman)  #HANACleaner should only run on the Master Node
+            return is_master(local_dbinstance, local_host, logman)  #HANAChecker should only run on the Master Node
         else:
             return False
 
